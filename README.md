@@ -20,14 +20,32 @@
 ╰────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-## 命令
+## 安装
 
-包名 `@hehua704/cred`，**命令就是 `cred`**，一一对应。
+**主方案：npm**
 
 ```bash
 npm i -g @hehua704/cred      # 安装后全局可用 cred
 npx @hehua704/cred           # 不安装直接跑
 ```
+
+**备用方案：GitHub Release（不依赖 npm registry）**
+
+每个 tag 都会自动产出 `hehua704-cred-<version>.tgz` 并挂到 Release 上，包里已含 `dist/`，
+装的时候不需要编译：
+
+```bash
+npm i -g https://github.com/hehua704/cred/releases/download/v0.1.0/hehua704-cred-0.1.0.tgz
+```
+
+适用于内网、registry 不可达、或不想依赖 npm 的场景。
+
+> 不要用 `npm i -g github:hehua704/cred`：这条会触发 `prepare` 构建，
+> 而 npm 12 默认拦截依赖的安装脚本，装完可能没有 `dist/`。
+
+## 命令
+
+包名 `@hehua704/cred`，**命令就是 `cred`**，一一对应。
 
 本地开发时（推荐先这样测）：
 
@@ -196,6 +214,32 @@ npm test
 
 - 9 条 CLI 测试：init / set / get / get --json / has / env / list --json / 未初始化提示 / --dir；
 - 9 条渲染测试：中英 × 60/76/100 列等宽、窄屏降级、ASCII 无 Unicode、语言界面。
+
+## 发布流程
+
+1. 改 `package.json` 的 `version`；
+2. 打 tag 并推送：
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+3. GitHub Actions 自动执行：
+
+| 步骤 | 说明 |
+|---|---|
+| `npm ci` / `npm test` / `check:leak` | 每次必跑 |
+| `npm pack` | 生成 tarball |
+| `npm publish --provenance` | **主方案**，需 `NPM_PUBLISH=true` |
+| `softprops/action-gh-release` | **备用方案**，把 tarball 挂到 Release |
+
+主方案启用条件（一次性）：
+
+- 在 npmjs.com → Packages → `@hehua704/cred` → Settings → Trusted publishing 添加
+  GitHub Actions：`hehua704` / `cred` / `publish.yml`；
+- 仓库 Settings → Variables 添加 `NPM_PUBLISH=true`。
+
+在那之前，打 tag 只跑测试并产出 Release 包，不会尝试 npm 发布，也不会有失败的红叉。
 
 ## 发布前检查
 
