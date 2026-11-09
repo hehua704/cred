@@ -1,0 +1,31 @@
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # OIDC trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: npm >= 11.5.1 (OIDC support)
+        run: npm install -g npm@latest
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:leak
+
+      - name: publish with provenance
+        run: npm publish --provenance --access public
