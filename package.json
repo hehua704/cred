@@ -10,6 +10,7 @@
     "bin/",
     "dist/",
     "locales/",
+    "docs/",
     "README.md",
     "LICENSE"
   ],
