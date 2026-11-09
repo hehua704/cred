@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  id-token: write   # OIDC trusted publishing
+  contents: write   # 上传 Release 资产（备用分发）
+  id-token: write   # npm trusted publishing (OIDC)
 
 jobs:
   publish:
@@ -27,8 +27,20 @@ jobs:
       - run: npm test
       - run: npm run check:leak
 
-      # 首次发布前需要先在 npmjs.com 配置 Trusted Publisher，
-      # 然后把仓库变量 NPM_PUBLISH 设为 true，避免打 tag 时出现失败的红叉。
-      - name: publish with provenance
+      - name: pack tarball
+        run: npm pack
+
+      # 主方案：发布到 npm。
+      # 需先在 npmjs.com 配好 Trusted Publisher，再把仓库变量 NPM_PUBLISH 设为 true。
+      - name: npm publish (primary)
         if: vars.NPM_PUBLISH == 'true'
         run: npm publish --provenance --access public
+
+      # 备用方案：把 tarball 挂到 Release，供无法访问 npm 的环境安装。
+      - name: attach tarball to release (fallback)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.tgz'
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
