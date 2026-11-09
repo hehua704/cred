@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import React from 'react';
 import { render } from 'ink';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -151,6 +151,33 @@ function resolveTargets(names: string[]): Platform[] {
   return out;
 }
 
+// 当前目录没配置时，找找附近有没有别的 .cred，避免用户以为 token 丢了
+function suggestOtherStores(): void {
+  const found: string[] = [];
+  const roots = [process.cwd()];
+  try {
+    for (const ent of readdirSync(process.cwd(), { withFileTypes: true })) {
+      if (ent.isDirectory() && !ent.name.startsWith('.') && ent.name !== 'node_modules') {
+        roots.push(join(process.cwd(), ent.name));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  for (const root of roots) {
+    const d = join(root, '.cred');
+    if (resolve(d) === resolve(DIR)) continue;
+    if (!existsSync(d)) continue;
+    const n = PLATFORMS.filter((pl) => existsSync(join(d, pl.file))).length;
+    if (n > 0) found.push(`${d}  (${n} 个 token)`);
+  }
+  if (found.length > 0) {
+    console.error(`\n提示：当前目录没有配置，但发现了其他凭证目录：`);
+    for (const f of found) console.error(`  ${f}`);
+    console.error(`用 --dir <path> 或 export CRED_DIR=<path> 指定。`);
+  }
+}
+
 function fail(msg: string, code = 1): never {
   console.error(msg);
   process.exit(code);
@@ -225,7 +252,10 @@ function cmdGet(): void {
     });
   }
 
-  if (found.length === 0) fail(`no token for: ${missing.join(', ')}`);
+  if (found.length === 0) {
+    suggestOtherStores();
+    fail(`no token for: ${missing.join(', ')}`);
+  }
   if (missing.length > 0) console.error(`missing: ${missing.join(', ')}`);
 
   const field = val('--field');
@@ -312,6 +342,7 @@ async function main(): Promise<void> {
     if (cmd === 'set' || has('--preview') || has('--preview-lang')) {
       mkdirSync(DIR, { recursive: true, mode: 0o700 });
     } else {
+      suggestOtherStores();
       fail(
         `${DIR} 不存在。\n在当前项目初始化: cred init\n或指定已有目录: cred --dir <path> / export CRED_DIR=<path>`,
       );
@@ -379,6 +410,7 @@ async function main(): Promise<void> {
       );
       return;
     }
+    if (rows.every((r) => !r.tok)) suggestOtherStores();
     const lines = [`${t('app.brand')} · ${t('list.title')}`, `dir: ${DIR}`, ''];
     for (const row of rows) {
       const st = statusView(row, t, th);
@@ -393,7 +425,9 @@ async function main(): Promise<void> {
 
   if (cmd === 'recheck') {
     const th = theme(ascii);
-    for (const row of store.rows()) {
+    const only = positionals.length > 1 ? resolveTargets(positionals.slice(1)) : null;
+    const targets = only ? store.rows().filter((r) => only.some((p) => p.key === r.key)) : store.rows();
+    for (const row of targets) {
       if (!row.tok) {
         console.log(`${pad(row.label, 13)} ${th.unset} ${t('status.unset')}`);
         continue;
