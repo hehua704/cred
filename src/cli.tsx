@@ -61,17 +61,48 @@ const val = (n: string) => {
   return typeof v === 'string' ? v : null;
 };
 
+// 全局默认目录（不在任何项目里时使用）
+const CONFIG_HOME = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
+const GLOBAL_CFG = join(CONFIG_HOME, 'cred', 'config.json');
+
+function readGlobalConfig(): { defaultDir?: string } {
+  try {
+    return JSON.parse(readFileSync(GLOBAL_CFG, 'utf8')) as { defaultDir?: string };
+  } catch {
+    return {};
+  }
+}
+
+function writeGlobalConfig(cfg: { defaultDir?: string }): boolean {
+  try {
+    mkdirSync(join(CONFIG_HOME, 'cred'), { recursive: true, mode: 0o700 });
+    writeFileSync(GLOBAL_CFG, JSON.stringify(cfg, null, 2) + '\n', { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // 数据目录解析顺序：
 //   1. --dir
 //   2. CRED_DIR
 //   3. 当前目录的 ./.cred（项目内配置）
-//   4. ~/.cred（全局，存在时）
-//   5. 回退到 ./.cred（由 cred init 创建）
+//   4. cred use 设置的全局默认目录
+//   5. ~/.cred（存在时）
+//   6. 回退到 ./.cred（由 cred init 创建）
 function resolveDir(): string {
   const explicit = val('--dir') ?? process.env[`${ENV_PREFIX}DIR`];
   if (explicit) return resolve(expandHome(explicit));
+
   const local = join(process.cwd(), '.cred');
   if (existsSync(local)) return local;
+
+  const fallback = readGlobalConfig().defaultDir;
+  if (fallback) {
+    const p = resolve(expandHome(fallback));
+    if (existsSync(p)) return p;
+  }
+
   const globalDir = join(homedir(), '.cred');
   if (existsSync(globalDir)) return globalDir;
   return local;
@@ -100,6 +131,8 @@ function usage(): string {
   cred                        ${t('app.title')}
   cred init                   create ./.cred (mode 700) and config.toml
   cred init --from <dir>      import tokens from another directory
+  cred use [dir]              set/show the default store (works from anywhere)
+  cred use --unset            clear the default store
 
   cred list [platform...]     list credentials (--json for machine output)
   cred get <platform...>      print token(s); "all" = every configured one
@@ -227,6 +260,27 @@ function cmdInit(): void {
   }
 }
 
+function cmdUse(): void {
+  const arg = positionals[1];
+  if (!arg) {
+    const cfg = readGlobalConfig();
+    console.log(`默认目录: ${cfg.defaultDir ?? '(未设置)'}`);
+    console.log(`本次解析: ${DIR}`);
+    console.log(`配置文件: ${GLOBAL_CFG}`);
+    return;
+  }
+  if (arg === '--unset' || arg === 'unset') {
+    const ok = writeGlobalConfig({});
+    console.log(ok ? '已清除默认目录' : `写入失败: ${GLOBAL_CFG}`);
+    return;
+  }
+  const target = resolve(expandHome(arg));
+  if (!existsSync(target)) fail(`目录不存在: ${target}`);
+  if (!writeGlobalConfig({ defaultDir: target })) fail(`写入失败: ${GLOBAL_CFG}`);
+  console.log(`默认目录已设为: ${target}`);
+  console.log('现在从任何目录运行 cred 都会用它。');
+}
+
 function cmdGet(): void {
   const targets = resolveTargets(positionals.slice(1));
   if (targets.length === 0) fail('usage: cred get <platform...>  (支持 all)', 2);
@@ -322,6 +376,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'init') {
     cmdInit();
+    return;
+  }
+
+  if (cmd === 'use') {
+    cmdUse();
     return;
   }
 
