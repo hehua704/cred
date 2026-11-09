@@ -305,6 +305,7 @@ src/i18n.ts          文案与优先级
 src/config.ts        TOML 读写
 src/width.ts         宽度计算
 locales/*.json       文案
+docs/RELEASE-PLAYBOOK.md   开发与发布流程手册（可复用到其他项目）
 ```
 
 ## License
