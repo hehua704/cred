@@ -5,7 +5,7 @@
 
 ```
 ╭────────────────────────────────────────────────────────────────────────────────╮
-│ cred · 凭证管理器                              语言: 中文  /root/.dsh-publish │
+│ cred · 凭证管理器                              语言: 中文  ~/.config/cred │
 │────────────────────────────────────────────────────────────────────────────────│
 │ 凭证列表                     │ GitHub PAT                                     │
 │ ▸ GitHub PAT  ● 有效         │ ────────────────────────────────────────────── │
@@ -50,7 +50,8 @@ npm i -g https://github.com/hehua704/cred/releases/download/v0.1.0/hehua704-cred
 本地开发时（推荐先这样测）：
 
 ```bash
-cd /root/开发/cred
+git clone https://github.com/hehua704/cred.git
+cd cred
 npm install && npm run build
 node bin/cred.js             # 等同于 cred
 # 或者装成命令：
@@ -59,22 +60,31 @@ ln -sf "$PWD/bin/cred.js" ~/.local/bin/cred
 
 ## 数据目录
 
-配置和 token 放在**项目目录**下，不再散落到 `~/.dsh-publish`。
+配置和 token 只存在本地目录里，不进仓库、不进 npm 包。
 
 解析顺序：
 
 1. `--dir <path>`
 2. 环境变量 `CRED_DIR`
 3. 当前目录的 `./.cred`（存在时）
-4. `~/.cred`（存在时）
-5. 回退到 `./.cred`（由 `cred init` 创建）
+4. `cred use` 设置的全局默认目录
+5. `~/.cred`（存在时）
+6. 回退到 `./.cred`（由 `cred init` 创建）
 
 初始化：
 
 ```bash
 cd <你的项目>
-cred init                     # 创建 ./.cred（700）+ config.toml + .cred/.gitignore
-cred init --from ~/.dsh-publish   # 迁移已有 token
+cred init                  # 创建 ./.cred（700）+ config.toml + .cred/.gitignore
+cred init --from <旧目录>   # 从已有目录迁移 token
+```
+
+**想在任何目录都能用**，设一次默认目录：
+
+```bash
+cred use /path/to/project/.cred   # 写入 ~/.config/cred/config.json
+cred use                          # 查看当前默认
+cred use --unset                  # 清除
 ```
 
 `.cred/` 自带 `.gitignore`（内容 `*`），即使项目根没有 gitignore，token 也不会被提交。
@@ -155,13 +165,13 @@ cred has pypi || cred set pypi              # 先判断再补
 如果 DSH 的工作目录不是项目根，用 `--dir` 指定：
 
 ```bash
-cred get github --dir /root/开发/cred/.cred
+cred get github --dir /path/to/.cred
 ```
 
 或者设置一次环境变量：
 
 ```bash
-export CRED_DIR=/root/开发/cred/.cred
+export CRED_DIR=/path/to/.cred
 ```
 
 退出码约定：
@@ -230,16 +240,27 @@ git tag v0.1.1 && git push origin v0.1.1
 |---|---|
 | `npm ci` / `npm test` / `check:leak` | 每次必跑 |
 | `npm pack` | 生成 tarball |
-| `npm publish --provenance` | **主方案**，需 `NPM_PUBLISH=true` |
+| `npm publish` | **主方案**，用仓库 secret `NPM_TOKEN` |
 | `softprops/action-gh-release` | **备用方案**，把 tarball 挂到 Release |
 
 主方案启用条件（一次性）：
 
-- 在 npmjs.com → Packages → `@hehua704/cred` → Settings → Trusted publishing 添加
-  GitHub Actions：`hehua704` / `cred` / `publish.yml`；
+- 仓库 Settings → Secrets and variables → Actions → **New repository secret**
+  名称 `NPM_TOKEN`，值填 npm 的 Granular Access Token（Read and write + 允许 Bypass 2FA）；
 - 仓库 Settings → Variables 添加 `NPM_PUBLISH=true`。
 
-在那之前，打 tag 只跑测试并产出 Release 包，不会尝试 npm 发布，也不会有失败的红叉。
+之后打 tag 就会自动发布，同时产出 Release 包。
+
+> 也可以本地直接发：`npm publish --access public`（需要 `~/.npmrc` 或 `--//registry.npmjs.org/:_authToken=...`）。
+
+### 以后想升级到 OIDC
+
+token 方式简单，但 2027 年 1 月起 npm 会禁止 bypass-2FA token 直接发布。届时可切换：
+
+1. npmjs.com → 包页面 → Settings → Trusted publishing → 添加 GitHub Actions
+   （`hehua704` / `cred` / `publish.yml`）；
+2. 删掉 `NPM_TOKEN` secret，workflow 里去掉 `env: NODE_AUTH_TOKEN`，加回
+   `permissions: id-token: write` 和 `npm publish --provenance`。
 
 ## 发布前检查
 

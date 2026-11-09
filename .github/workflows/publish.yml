@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write   # 上传 Release 资产（备用分发）
-  id-token: write   # npm trusted publishing (OIDC)
 
 jobs:
   publish:
@@ -20,9 +19,6 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: npm >= 11.5.1 (OIDC support)
-        run: npm install -g npm@latest
-
       - run: npm ci
       - run: npm test
       - run: npm run check:leak
@@ -30,13 +26,15 @@ jobs:
       - name: pack tarball
         run: npm pack
 
-      # 主方案：发布到 npm。
-      # 需先在 npmjs.com 配好 Trusted Publisher，再把仓库变量 NPM_PUBLISH 设为 true。
+      # 主方案：发布到 npm（token 方式）
+      # 需要仓库 secret NPM_TOKEN，以及变量 NPM_PUBLISH=true
       - name: npm publish (primary)
         if: vars.NPM_PUBLISH == 'true'
-        run: npm publish --provenance --access public
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # 备用方案：把 tarball 挂到 Release，供无法访问 npm 的环境安装。
+      # 备用方案：把 tarball 挂到 Release
       - name: attach tarball to release (fallback)
         uses: softprops/action-gh-release@v2
         with:
