@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 本机凭证与配置 —— 绝不提交
+.cred/
+.cred-*/
+.dsh-publish/
+*-token
+meta.json
+config.toml
+.env
+.env.*
+
+# 打包与日志
+*.tgz
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
