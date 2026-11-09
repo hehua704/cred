@@ -27,5 +27,8 @@ jobs:
       - run: npm test
       - run: npm run check:leak
 
+      # 首次发布前需要先在 npmjs.com 配置 Trusted Publisher，
+      # 然后把仓库变量 NPM_PUBLISH 设为 true，避免打 tag 时出现失败的红叉。
       - name: publish with provenance
+        if: vars.NPM_PUBLISH == 'true'
         run: npm publish --provenance --access public
