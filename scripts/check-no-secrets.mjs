@@ -23,12 +23,15 @@ const SECRET_PATTERNS = [
   /\.key$/,
 ];
 
+// 某些环境（如本机）默认 ~/.npm 缓存权限损坏，统一用临时缓存避免 EACCES
+const NPM_CACHE = join(tmpdir(), 'cred-npm-cache');
+
 function listViaTarball() {
   const dir = mkdtempSync(join(tmpdir(), 'cred-pack-'));
   try {
     const out = execFileSync(
       'npm',
-      ['pack', '--pack-destination', dir, '--ignore-scripts', '--silent'],
+      ['pack', '--pack-destination', dir, '--ignore-scripts', '--silent', '--cache', NPM_CACHE],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
     const name = out.trim().split('\n').filter(Boolean).pop();
@@ -48,7 +51,7 @@ function listViaTarball() {
 }
 
 function listViaJson() {
-  const raw = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const raw = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts', '--cache', NPM_CACHE], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
