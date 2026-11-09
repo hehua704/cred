@@ -1,0 +1,26 @@
+# npm 发布过滤（与 package.json 的 files 白名单双保险）
+# files 已限定为 bin/ dist/ locales/ README.md LICENSE，
+# 这里再显式排除本机配置，避免任何配置误入 tarball。
+
+# 本机凭证
+.cred/
+.cred-*/
+.dsh-publish/
+*-token
+meta.json
+config.toml
+.env
+.env.*
+
+# 开发用文件
+.github/
+test/
+scripts/
+src/
+tsconfig.json
+.gitignore
+.npmignore
+*.tgz
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,45 @@
+{
+  "name": "@hehua704/cred",
+  "version": "0.1.0",
+  "description": "Credential manager TUI for publishing tokens (GitHub / npm / PyPI / crates.io), built with Ink + React.",
+  "type": "module",
+  "bin": {
+    "cred": "bin/cred.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "locales/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "node scripts/check-no-secrets.mjs && npm run build",
+    "check:leak": "node scripts/check-no-secrets.mjs"
+  },
+  "keywords": [
+    "credentials",
+    "token",
+    "tui",
+    "ink",
+    "cli"
+  ],
+  "author": "hehua704",
+  "license": "MIT",
+  "dependencies": {
+    "ink": "^8.0.0",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}
