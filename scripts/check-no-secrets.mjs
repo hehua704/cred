@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // 发布前检查：确认 tarball 里没有任何本机凭证或配置。
-// 由 package.json 的 prepublishOnly 调用，也可单独运行。
+// 由 package.json 的 prepublishOnly 调用，也可单独运行（npm run check:leak）。
+//
+// 注意：不同 npm 大版本的 `npm pack --dry-run --json` 输出不一致
+// （npm 12 在部分环境返回空数组），所以这里改为真实打包 + 解压列表，
+// 再用 `npm pack --dry-run --json` 作为兜底。
 
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -18,30 +23,55 @@ const SECRET_PATTERNS = [
   /\.key$/,
 ];
 
-function pack(cacheArgs) {
-  return execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts', ...cacheArgs], {
+function listViaTarball() {
+  const dir = mkdtempSync(join(tmpdir(), 'cred-pack-'));
+  try {
+    const out = execFileSync(
+      'npm',
+      ['pack', '--pack-destination', dir, '--ignore-scripts', '--silent'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const name = out.trim().split('\n').filter(Boolean).pop();
+    const tgz = join(dir, name ?? readdirSync(dir)[0]);
+    const listing = execFileSync('tar', ['-tzf', tgz], { encoding: 'utf8' });
+    return listing
+      .split('\n')
+      .filter((l) => l && !l.endsWith('/'))
+      .map((l) => l.replace(/^package\//, ''));
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function listViaJson() {
+  const raw = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const parsed = JSON.parse(raw);
+  return (parsed[0]?.files ?? []).map((f) => f.path);
 }
 
-let raw;
+let files;
+let method;
 try {
-  raw = pack([]);
-} catch (err) {
-  // 某些环境的 ~/.npm 缓存权限损坏（EACCES），退回临时缓存重试
+  files = listViaTarball();
+  method = 'tarball';
+} catch {
   try {
-    raw = pack(['--cache', join(tmpdir(), 'cred-pack-cache')]);
-  } catch (err2) {
-    console.error('✗ 无法运行 npm pack --dry-run:', err2.message);
+    files = listViaJson();
+    method = 'json';
+  } catch (err) {
+    console.error('✗ 无法生成打包清单:', err.message);
     process.exit(1);
   }
 }
 
-const parsed = JSON.parse(raw);
-const files = (parsed[0]?.files ?? []).map((f) => f.path);
-
-if (files.length === 0) {
+if (!files || files.length === 0) {
   console.error('✗ 打包结果为空，检查 package.json 的 files 字段');
   process.exit(1);
 }
@@ -54,5 +84,5 @@ if (leaks.length > 0) {
   process.exit(1);
 }
 
-console.log(`✓ 发布检查通过：${files.length} 个文件，未发现本机凭证`);
-for (const f of files) console.log(`   ${f}`);
+console.log(`✓ 发布检查通过：${files.length} 个文件（${method}），未发现本机凭证`);
+for (const f of files.sort()) console.log(`   ${f}`);
