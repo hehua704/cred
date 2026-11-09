@@ -16,7 +16,11 @@ import { App } from './ui/App.js';
 import { pad } from './width.js';
 import type { ScreenState } from './types.js';
 
-const VERSION = '0.1.0';
+// 版本号从 package.json 读取，避免与 dist 里的常量不一致
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+  version: string;
+};
+const VERSION = pkg.version;
 const ENV_PREFIX = 'CRED_';
 
 // 平台 -> 环境变量名（给 cred env 用）
