@@ -99,6 +99,67 @@ cred use --unset                  # 清除
 └── pypi-token
 ```
 
+## Token 流程
+
+### 四条规矩
+
+1. **只进文件**：用 `cred set` 或界面里的 `a` 写入，不贴进对话、issue、提交；
+2. **权限收紧**：目录 700、文件 600，`.cred/` 自带 `.gitignore`，即使项目根没有 gitignore 也提交不进去；
+3. **最小权限**：能限仓库就限仓库，能限 scope 就限 scope；
+4. **怀疑泄露立刻吊销重建**，不要等确认。
+
+### 各平台怎么建
+
+**GitHub PAT** — https://github.com/settings/tokens?type=beta
+
+| 项 | 填什么 |
+|---|---|
+| Expiration | 90 days（建议；能否显示日期取决于平台是否返回到期信息） |
+| Contents | Read and write（推代码、建 Release） |
+| Workflows | Read and write（推送 `.github/workflows/` 时必需） |
+| Actions | Read and write（查 CI 结果） |
+
+**npm** — https://www.npmjs.com/settings/hehua704/tokens → Generate New Token → Granular
+
+- Permissions：Read and write；Packages 选 `@hehua704`（或全部）
+- **必须勾 Bypass 2FA**：Windows Hello / passkey 给不出 6 位验证码，否则 `npm publish` 报 `EOTP`
+- 注意：按 npm 公告，2027-01 起 bypass-2FA token 不能再直接发布，届时改用 OIDC trusted publishing
+  （仓库的 workflow 已支持，配好 `NPM_TOKEN` secret 或 trusted publisher 即可）
+
+**PyPI** — https://pypi.org/manage/account/token/
+
+- 第一个包用 Entire account，之后收窄到具体项目
+- 没有 whoami 接口，`cred` 只能校验格式（`pypi-` 前缀 + 长度 ≥80）
+
+**crates.io** — https://crates.io/settings/tokens
+
+- Scopes：`publish-new`、`publish-update`、`yank`
+- 默认不过期，必须手动轮换
+
+### 写入与自检
+
+```bash
+cred set github < token.txt      # 也可以 echo 'xxx' | cred set github
+cred set npm    < token.txt
+cred set pypi   < token.txt
+cred set crates < token.txt
+
+cred recheck                     # 逐个联网校验，结果写回 meta.json
+cred list                        # 看状态和到期（未知 = 平台没告知）
+```
+
+交互界面里选中平台按 `a` 粘贴；替换已有 token 需要二次确认，保存后自动校验一次。
+
+### 轮换与吊销
+
+| 时机 | 动作 |
+|---|---|
+| 每 90 天 | 重建 GitHub / crates / PyPI，旧的吊销 |
+| 怀疑泄露 | 立刻吊销、重建，不用先确认 |
+| 换机器 | 旧 token 吊销，新机器重建 |
+
+吊销入口：GitHub `settings/tokens` · npm `settings/<user>/tokens` · PyPI `manage/account/token` · crates.io `settings/tokens`。
+
 ## 常用命令
 
 ```bash
