@@ -31,6 +31,7 @@ process.stdout.write(z.zstdDecompressSync(fs.readFileSync(process.argv[1])).toSt
 |---|---|
 | 包名 / 命令 | `@hehua704/cred` / `cred` |
 | 当前版本 | `0.1.3`（本地；npm `latest` 仍是 0.1.2，等推送后发） |
+| 到期语义 | `date` / `never` / `unknown` 三态，缺失一律显示「未知」 |
 | 仓库 | `https://github.com/hehua704/cred`，远端停在 `cf6919d` |
 | 本地状态 | 领先远端 2 个提交（0.1.2 的 init 修复 + 0.1.3 的 config 修复），**均未推送** |
 | 技术栈 | Node ≥22 · TypeScript 5.9 · Ink 8 + React 19 · ESM |
@@ -107,6 +108,8 @@ src/types.ts         共享类型
     "createdAt": "2026-11-09T…",
     "updatedAt": "2026-11-10T…",
     "expiresAt": "2027-02-07",
+    "expiresState": "date",          // date | never | unknown
+    "expiresSource": "platform",     // platform | manual
     "lastStatus": { "ok": true, "user": "hehua704", "code": null },
     "lastCheckedAt": "2026-11-10T…"
   }
@@ -115,16 +118,19 @@ src/types.ts         共享类型
 
 - 读 token 时只取第一段空白前的字符，容忍尾随换行/注释；
 - `set` 时保留原 `createdAt`，只刷新 `updatedAt`，并把 `lastStatus` 置空；
-- GitHub 首次写入且没设过有效期时，自动填 +90 天。
+- **换 token 时到期信息一起清空**（回到 unknown）——旧日期属于旧凭证，不能沿用。
 
 ### 2.4 校验矩阵
 
-| 平台 | 请求 | 能判断 | 判断不了 |
+| 平台 | 请求 | 能判断 | 到期时间 |
 |---|---|---|---|
-| GitHub | `GET api.github.com/user`，`Bearer` | 有效性 + 用户名 | 有没有目标仓库的写权限 |
-| crates.io | `GET crates.io/api/v1/me` | 200 → 有效；错误文案含 `website` → **也视为有效** | 已被限制为仅网页，403 不等于无效 |
-| npm | `GET registry.npmjs.org/-/whoami` | 有效性 + 用户名 | 发布权限、2FA 策略 |
-| PyPI | 纯本地格式：`pypi-` 前缀 + 长度 ≥80 | 格式对不对 | 一切服务端状态（没有 whoami 接口） |
+| GitHub | `GET api.github.com/user`，`Bearer` | 有效性 + 用户名 | 只有响应头 `github-authentication-token-expiration` 存在时才有日期；没有 = 未知 |
+| crates.io | `GET crates.io/api/v1/me` | 200 → 有效；错误文案含 `website` → **也视为有效** | 接口不提供 → 未知 |
+| npm | `GET registry.npmjs.org/-/whoami` | 有效性 + 用户名 | 不暴露 → 未知 |
+| PyPI | 纯本地格式：`pypi-` 前缀 + 长度 ≥80 | 格式对不对 | 没有接口 → 未知 |
+
+**到期是三态的**：`date`（平台/用户给了准确日期）、`never`（明确不过期）、`unknown`（没有依据）。
+缺失一律 `unknown`，绝不把「没说」当成「不过期」，也绝不编日期。
 
 `ok` 三态：`true` 有效 / `false` 无效 / `null` 未知（格式正确或接口不支持）。
 `recheck` 和界面里的 `r` 都会把结果写回 `meta.json`，下次打开直接显示上次状态。
@@ -135,7 +141,7 @@ src/types.ts         共享类型
   所有行用 `width()` 按显示宽度对齐，中英混排不会错位。
 - **主题**：Unicode 框线 / ASCII 两套（`--ascii`，或 `LANG` 不含 UTF-8 时自动切）。
 - **打码**：`前6 + 8 个点 + 后4`；长度 ≤12 只留前 3。
-- **键位**：`↑↓/jk` 选择 · `c` 复制（OSC 52）· `v` 显隐 · `r` 校验 · `e` 有效期（支持 `+90d`）
+- **键位**：`↑↓/jk` 选择 · `c` 复制（OSC 52）· `v` 显隐 · `r` 校验 · `e` 有效期（`YYYY-MM-DD` / `+90d` / `none` / 留空=未知）
   · `a` 新增/替换（替换要二次确认）· `d` 清除元信息 · `l` 语言 · `q` 退出。
 - **复制**：OSC 52 转义序列直接写剪贴板，SSH 里可用；tmux 下自动包 `\x1bPtmux;` 透传。
   不打印明文，失败就提示按 `v` 手动选。
@@ -148,6 +154,7 @@ src/types.ts         共享类型
 | 命令 | 输出 |
 |---|---|
 | `cred get <p>` | 只有 token，无装饰 |
+| `cred get <p> --field expires` | `2027-02-08` / `never` / `unknown` |
 | `cred get <p1> <p2>` | 每行 `platform<TAB>token` |
 | `cred get <p> --json` | `{platform,token,expiresAt,updatedAt,user}` |
 | `cred get <p1> <p2> --json` | 上面的数组 |
@@ -204,6 +211,7 @@ tag v* → GitHub Actions：test → leak → pack → 发 npm（vars.NPM_PUBLIS
 | `npm pack --dry-run --json` 空输出 | npm 12 行为差异 | 改用真实打包 + `tar -tzf` 校验 |
 | 命令必须 `cd` 到项目才能用 | 目录解析只认 `./.cred` | 加 `cred use` 设全局默认 |
 | 测试覆盖了真实 token | `init` 回退到了全局默认库 | 0.1.2：init 锁死当前目录 + 测试隔离 HOME |
+| 给 GitHub 自动填 +90 天 | 那是编的日期，不是平台说的 | 0.1.3：删掉自动填充；到期只认平台/手动，缺失显示未知 |
 | 新目录 init 后没有 `config.toml` | 写的是解析后的 `CONFIG_PATH`，落到全局库 | 0.1.3：改写到目标目录，加断言 |
 | crates.io 显示 403 | `/api/v1/me` 已限制为仅网页，合法 token 也 403 | 按错误文案判断，`website` 也算有效 |
 | PyPI 想校验用户名 | 没有 whoami 接口 | 只做格式校验，如实标「格式正确」 |

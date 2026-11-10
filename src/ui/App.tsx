@@ -4,6 +4,8 @@ import { Screen } from './Screen.js';
 import { createT } from '../i18n.js';
 import { verify } from '../verify.js';
 import { writeConfig } from '../config.js';
+import { expiryPatch } from '../store.js';
+import { parseExpiryInput } from '../expiry.js';
 import type { Config } from '../config.js';
 import type { Store } from '../store.js';
 import type { InputState, Mode, Row, ScreenState } from '../types.js';
@@ -53,11 +55,13 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         return;
       }
       setMessage(t('msg.checking', { name: row.label }));
-      const res = await verify(row.key, row.tok);
-      patchRow(row.file, { status: res });
-      store.setMeta(row.file, { lastStatus: res, lastCheckedAt: new Date().toISOString() });
+      const { status, expiry } = await verify(row.key, row.tok);
+      const prev = store.readMeta()[row.file] ?? {};
+      const patch = expiryPatch(prev, expiry);
+      patchRow(row.file, { status, ...patch });
+      store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
       const text =
-        res.ok === true ? t('status.valid') : res.ok === false ? t('status.invalid') : t('status.formatOk');
+        status.ok === true ? t('status.valid') : status.ok === false ? t('status.invalid') : t('status.formatOk');
       setMessage(t('msg.checked', { name: row.label, text }));
     },
     [patchRow, store, t],
@@ -68,10 +72,11 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     (async () => {
       for (const row of store.rows()) {
         if (cancelled || !row.tok) continue;
-        const res = await verify(row.key, row.tok);
+        const { status, expiry } = await verify(row.key, row.tok);
         if (cancelled) return;
-        patchRow(row.file, { status: res });
-        store.setMeta(row.file, { lastStatus: res, lastCheckedAt: new Date().toISOString() });
+        const patch = expiryPatch(store.readMeta()[row.file] ?? {}, expiry);
+        patchRow(row.file, { status, ...patch });
+        store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
       }
     })();
     return () => {
@@ -96,32 +101,31 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         setMessage(t('msg.writeFail', { code: 'EACCES' }));
         return;
       }
-      const row = rows[sel];
       const prev = store.readMeta()[im.file] ?? {};
       const now = new Date().toISOString();
-      const patch: Record<string, unknown> = {
+      // 换了 token，旧的到期信息就不再属于这枚凭证：回到“未知”，等平台下一次告知。
+      const patch = {
         createdAt: prev.createdAt ?? now,
         updatedAt: now,
         lastStatus: null,
+        expiresAt: null,
+        expiresState: 'unknown' as const,
+        expiresSource: null,
       };
-      if (!prev.expiresAt && row?.defaultExpiryDays) {
-        patch.expiresAt = new Date(Date.now() + row.defaultExpiryDays * 86400000)
-          .toISOString()
-          .slice(0, 10);
-      }
-      store.setMeta(im.file, patch as never);
-      const meta = store.readMeta()[im.file] ?? {};
+      store.setMeta(im.file, patch);
       patchRow(im.file, {
         tok,
         updated: new Date(),
         status: null,
         mode: '600',
-        expiresAt: meta.expiresAt ?? null,
+        expiresAt: null,
+        expiresState: 'unknown',
+        expiresSource: null,
       });
       setInput(null);
       setMessage(t('msg.saved', { name: im.label, n: tok.length }));
     },
-    [patchRow, rows, sel, store, t],
+    [patchRow, store, t],
   );
 
   const handleList = useCallback(
@@ -178,7 +182,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
           kind: 'expiry',
           file: row.file,
           label: `${row.label} ${t('field.expires')}`,
-          buffer: row.expiresAt ?? '',
+          buffer: row.expiresState === 'never' ? 'none' : (row.expiresAt ?? ''),
           stage: 'input',
           replacing: false,
         });
@@ -186,8 +190,18 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
       }
       if (inputStr === 'd') {
         if (!row?.tok) return;
-        store.setMeta(row.file, { expiresAt: null, lastStatus: null });
-        patchRow(row.file, { expiresAt: null, status: null });
+        store.setMeta(row.file, {
+          expiresAt: null,
+          expiresState: 'unknown',
+          expiresSource: null,
+          lastStatus: null,
+        });
+        patchRow(row.file, {
+          expiresAt: null,
+          expiresState: 'unknown',
+          expiresSource: null,
+          status: null,
+        });
         setMessage(t('msg.metaCleared', { name: row.label }));
         return;
       }
@@ -235,16 +249,30 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         }
         if (key.return) {
           const row = rows[sel];
-          let val = input.buffer.trim();
-          if (/^\+\d+d$/.test(val)) {
-            val = new Date(Date.now() + Number(val.slice(1, -1)) * 86400000)
-              .toISOString()
-              .slice(0, 10);
+          const parsed = parseExpiryInput(input.buffer);
+          if (!parsed) {
+            setMessage(t('input.expiryInvalid'));
+            return;
           }
-          store.setMeta(input.file, { expiresAt: val || null });
-          patchRow(input.file, { expiresAt: val || null });
+          const patch = {
+            expiresAt: parsed.state === 'date' ? parsed.at : null,
+            expiresState: parsed.state,
+            expiresSource: parsed.state === 'unknown' ? null : ('manual' as const),
+          };
+          store.setMeta(input.file, patch);
+          patchRow(input.file, patch);
           setInput(null);
-          setMessage(t('msg.expirySet', { name: row.label, value: val || '—' }));
+          setMessage(
+            t('msg.expirySet', {
+              name: row.label,
+              value:
+                parsed.state === 'date'
+                  ? String(parsed.at)
+                  : parsed.state === 'never'
+                    ? t('time.none')
+                    : t('time.unknown'),
+            }),
+          );
           return;
         }
         if (key.backspace || key.delete) {

@@ -4,7 +4,6 @@ export interface Platform {
   key: PlatformKey;
   file: string;
   label: string;
-  defaultExpiryDays: number | null;
 }
 
 export interface Status {
@@ -14,11 +13,22 @@ export interface Status {
   note?: string;
 }
 
+/** 到期信息只认两个来源：平台自己说的（platform），或用户手动填的（manual）。 */
+export type ExpiryState = 'date' | 'never' | 'unknown';
+export type ExpirySource = 'platform' | 'manual';
+
+export interface Expiry {
+  state: ExpiryState;
+  at: string | null;
+}
+
 export interface Row extends Platform {
   tok: string | null;
   mode: string | null;
   updated: Date | null;
   expiresAt: string | null;
+  expiresState: ExpiryState;
+  expiresSource: ExpirySource | null;
   status: Status | null;
 }
 

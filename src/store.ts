@@ -1,17 +1,50 @@
 import { readFileSync, writeFileSync, existsSync, statSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { PLATFORMS } from './platforms.js';
-import type { Row, Status } from './types.js';
+import type { Expiry, ExpirySource, ExpiryState, Row, Status } from './types.js';
 
 export interface MetaEntry {
   createdAt?: string;
   updatedAt?: string;
   expiresAt?: string | null;
+  /** date = 平台/用户给了准确日期；never = 明确不过期；unknown = 没有依据 */
+  expiresState?: ExpiryState;
+  expiresSource?: ExpirySource | null;
   lastStatus?: Status | null;
   lastCheckedAt?: string;
 }
 
 export type Meta = Record<string, MetaEntry>;
+
+/** 老版本只存了 expiresAt：有日期当 date（来源按手动），没日期就是未知。 */
+export function resolveExpiry(m: MetaEntry): {
+  at: string | null;
+  state: ExpiryState;
+  source: ExpirySource | null;
+} {
+  const at = m.expiresAt ?? null;
+  return {
+    at,
+    state: m.expiresState ?? (at ? 'date' : 'unknown'),
+    source: m.expiresSource ?? (at ? 'manual' : null),
+  };
+}
+
+/**
+ * 把一次校验拿到的到期信息合并进 meta：
+ *   - 平台给了结论（日期 / 不过期）-> 以平台为准；
+ *   - 平台没说，但用户手动填过        -> 保留手动值；
+ *   - 平台没说且没有手动值            -> 未知；
+ *   - 这次压根没拿到响应（expiry = null）-> 什么都不改，避免网络抖动抹掉已有信息。
+ */
+export function expiryPatch(prev: MetaEntry, expiry: Expiry | null): Partial<MetaEntry> {
+  if (!expiry) return {};
+  if (expiry.state !== 'unknown') {
+    return { expiresAt: expiry.at, expiresState: expiry.state, expiresSource: 'platform' };
+  }
+  if (prev.expiresSource === 'manual') return {};
+  return { expiresAt: null, expiresState: 'unknown', expiresSource: null };
+}
 
 export interface Store {
   dir: string;
@@ -94,12 +127,15 @@ export function createStore(dir: string): Store {
         }
       }
       const m = meta[p.file] ?? {};
+      const exp = resolveExpiry(m);
       return {
         ...p,
         tok,
         mode,
         updated,
-        expiresAt: m.expiresAt ?? null,
+        expiresAt: exp.at,
+        expiresState: exp.state,
+        expiresSource: exp.source,
         status: m.lastStatus ?? null,
       };
     });

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync, 
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-import { createStore } from './store.js';
+import { createStore, expiryPatch, resolveExpiry } from './store.js';
 import { createT, resolveLocale, AVAILABLE, SUPPORTED } from './i18n.js';
 import { readConfig, writeConfig } from './config.js';
 import { findPlatform, PLATFORMS } from './platforms.js';
@@ -142,7 +142,7 @@ function usage(): string {
   cred get <platform...>      print token(s); "all" = every configured one
   cred get <p> --json         single object, or array when multiple targets
   cred get <p...> --format    plain | env | json   (default plain, tab-separated)
-  cred get <p> --field        token | expiresAt | user
+  cred get <p> --field        token | expires | expiresAt | user
   cred has <platform...>      exit 0 only if every target exists
   cred env [platform...]      print GITHUB_TOKEN=... lines (--export for eval)
   cred recheck                verify all and write meta.json
@@ -303,7 +303,15 @@ function cmdGet(): void {
 
   const store = createStore(DIR);
   const meta = store.readMeta();
-  const found: Array<{ platform: string; token: string; expiresAt: string | null; updatedAt: string | null; user: string | null }> = [];
+  const found: Array<{
+    platform: string;
+    token: string;
+    expiresAt: string | null;
+    expiresState: string;
+    expiresSource: string | null;
+    updatedAt: string | null;
+    user: string | null;
+  }> = [];
   const missing: string[] = [];
 
   for (const p of targets) {
@@ -313,10 +321,13 @@ function cmdGet(): void {
       continue;
     }
     const m = meta[p.file] ?? {};
+    const exp = resolveExpiry(m);
     found.push({
       platform: p.key,
       token: tok,
-      expiresAt: m.expiresAt ?? null,
+      expiresAt: exp.at,
+      expiresState: exp.state,
+      expiresSource: exp.source,
       updatedAt: m.updatedAt ?? null,
       user: m.lastStatus?.user ?? null,
     });
@@ -338,7 +349,15 @@ function cmdGet(): void {
   if (targets.length === 1 && found.length === 1) {
     const row = found[0];
     if (field === 'expiresAt') console.log(row.expiresAt ?? '');
-    else if (field === 'user') console.log(row.user ?? '');
+    else if (field === 'expires') {
+      console.log(
+        row.expiresState === 'date'
+          ? (row.expiresAt ?? 'unknown')
+          : row.expiresState === 'never'
+            ? 'never'
+            : 'unknown',
+      );
+    } else if (field === 'user') console.log(row.user ?? '');
     else console.log(row.token);
     return;
   }
@@ -435,15 +454,15 @@ async function main(): Promise<void> {
     if (!store.saveToken(p.file, tok)) fail(t('msg.writeFail', { code: 'EACCES' }));
     const prev = store.readMeta()[p.file] ?? {};
     const now = new Date().toISOString();
-    const patch: Record<string, unknown> = {
+    // 换了 token，旧的到期信息不再属于这枚凭证：回到“未知”，等平台下一次告知。
+    store.setMeta(p.file, {
       createdAt: prev.createdAt ?? now,
       updatedAt: now,
       lastStatus: null,
-    };
-    if (!prev.expiresAt && p.defaultExpiryDays) {
-      patch.expiresAt = new Date(Date.now() + p.defaultExpiryDays * 86400000).toISOString().slice(0, 10);
-    }
-    store.setMeta(p.file, patch as never);
+      expiresAt: null,
+      expiresState: 'unknown',
+      expiresSource: null,
+    });
     console.log(`${p.label}: saved ${tok.length} chars (mode 600) -> ${join(DIR, p.file)}`);
     return;
   }
@@ -476,6 +495,8 @@ async function main(): Promise<void> {
             status: r.status?.ok ?? null,
             user: r.status?.user ?? null,
             expiresAt: r.expiresAt,
+            expiresState: r.expiresState,
+            expiresSource: r.expiresSource,
             updatedAt: r.updated ? r.updated.toISOString() : null,
             mode: r.mode,
           })),
@@ -490,7 +511,7 @@ async function main(): Promise<void> {
     for (const row of rows) {
       const st = statusView(row, t, th);
       const upd = row.updated ? ago(row.updated, t) : '—';
-      const exp = expiryText(row.expiresAt, t);
+      const exp = expiryText(row, t);
       const perm = row.mode && row.mode !== '600' ? `  ⚠ ${row.mode}` : '';
       lines.push(`  ${pad(row.label, 13)} ${st.icon} ${pad(st.text, 22)} ${pad(upd, 14)} ${exp}${perm}`);
     }
@@ -507,10 +528,14 @@ async function main(): Promise<void> {
         console.log(`${pad(row.label, 13)} ${th.unset} ${t('status.unset')}`);
         continue;
       }
-      const res = await verify(row.key, row.tok);
-      store.setMeta(row.file, { lastStatus: res, lastCheckedAt: new Date().toISOString() });
-      const st = statusView({ ...row, status: res }, t, th);
-      console.log(`${pad(row.label, 13)} ${st.icon} ${st.text}`);
+      const { status, expiry } = await verify(row.key, row.tok);
+      const patch = expiryPatch(store.readMeta()[row.file] ?? {}, expiry);
+      store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
+      const next = { ...row, status, ...patch };
+      const st = statusView(next, t, th);
+      console.log(
+        `${pad(row.label, 13)} ${st.icon} ${pad(st.text, 22)} ${expiryText(next, t)}`,
+      );
     }
     return;
   }

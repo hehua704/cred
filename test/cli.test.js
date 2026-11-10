@@ -78,7 +78,10 @@ test('get --json 返回结构化字段', () => {
   const data = JSON.parse(r.out);
   assert.equal(data.platform, 'github');
   assert.equal(data.token, 'ghp_abc123');
-  assert.equal(data.expiresAt, new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10));
+  // 平台没告知之前不编日期：写入 token 后到期状态是 unknown
+  assert.equal(data.expiresAt, null);
+  assert.equal(data.expiresState, 'unknown');
+  assert.equal(data.expiresSource, null);
 });
 
 test('has 用退出码表达存在性', () => {

@@ -13,7 +13,7 @@
 │   PyPI        ◐ 格式正确     │ 用户        hehua704                           │
 │   npm         ○ 未配置       │ 状态        ● 有效 · hehua704                  │
 │                              │ 更新        2 小时前                           │
-│                              │ 到期        90 天后                            │
+│                              │ 到期        未知                               │
 │                              │ c 复制  v 显示  r 校验                         │
 │────────────────────────────────────────────────────────────────────────────────│
 │ ↑↓ 选择 c 复制 v 显示 r 校验 e 有效期 a 新增/替换 d 清除 l 语言 q 退出        │
@@ -146,8 +146,9 @@ Windows / macOS / Linux 通用，要求 Node ≥ 22（Ink 8 的要求）。
 
 ```bash
 cred get github               # 只打印 token
-cred get github --json        # {"platform","token","expiresAt","updatedAt","user"}
-cred get github --field expiresAt
+cred get github --json        # {"platform","token","expiresAt","expiresState","expiresSource",…}
+cred get github --field expires   # 2027-02-08 | never | unknown
+cred get github --field expiresAt # 只有准确日期，未知时为空
 cred get github --field user
 cred has github               # 存在 exit 0，不存在 exit 1
 cred env                      # GITHUB_TOKEN='...' 每行一个
@@ -190,11 +191,28 @@ export CRED_DIR=/path/to/.cred
 | `c` | 复制 token（OSC 52，SSH 可用） |
 | `v` | 显示 / 隐藏明文 |
 | `r` | 联网校验 |
-| `e` | 编辑有效期（`2027-02-07` 或 `+90d`） |
+| `e` | 编辑有效期（`2027-02-07` / `+90d` / `none` 不过期 / 留空=未知） |
 | `a` | 新增 / 替换 token |
 | `d` | 清除元信息（不删 token 文件） |
 | `l` | 切换语言 |
 | `q` | 退出 |
+
+## 到期时间从哪来
+
+只有**平台自己说了**才算数：
+
+| 情况 | 显示 |
+|---|---|
+| 平台返回了到期日期 | `90 天后` / `已过期 3 天` / `今天到期` |
+| 平台明确说不过期 | `不过期` |
+| 平台没说、或这个平台根本不提供 | `未知` |
+| 你按 `e` 手动填过 | 日期 + `手动`（平台下次给出结论时以平台为准） |
+
+目前只有 GitHub 可能提供到期时间：对会过期的 token，它在响应头
+`github-authentication-token-expiration` 里返回日期；**头不存在时不推断“不过期”**。
+crates.io、PyPI、npm 都没有查询到期的接口，所以默认显示 `未知`。
+
+写入或替换 token 时会清空旧的到期信息——旧日期属于旧凭证，不能沿用。
 
 ## 语言
 

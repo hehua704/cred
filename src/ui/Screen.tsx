@@ -44,10 +44,20 @@ export function ago(date: Date | null, t: TFn): string {
   return t('time.daysAgo', { n: Math.floor(sec / 86400) });
 }
 
-export function expiryText(expiresAt: string | null, t: TFn): string {
-  if (!expiresAt) return t('time.none');
-  const d = new Date(expiresAt);
-  if (Number.isNaN(d.getTime())) return t('time.none');
+/**
+ * 只有两种状态可以显示成确定结论：
+ *   - 平台/用户给了日期  -> “N 天后 / 已过期”
+ *   - 明确说了不过期      -> “不过期”
+ * 其余一律“未知”，不再把缺失当成“不过期”。
+ */
+export function expiryText(
+  row: Pick<Row, 'expiresAt' | 'expiresState'>,
+  t: TFn,
+): string {
+  if (row.expiresState === 'never') return t('time.none');
+  if (row.expiresState !== 'date' || !row.expiresAt) return t('time.unknown');
+  const d = new Date(row.expiresAt);
+  if (Number.isNaN(d.getTime())) return t('time.unknown');
   const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
   if (days < 0) return t('time.expired', { n: -days });
   if (days === 0) return t('time.today');
@@ -147,7 +157,12 @@ function Detail({ row, t, th, paneWidth }: { row: Row | undefined; t: TFn; th: T
       {field(t('field.user'), st.user ?? th.blank)}
       {field(t('field.status'), `${st.icon} ${st.text}`, st.color)}
       {field(t('field.updated'), ago(row.updated, t))}
-      {field(t('field.expires'), expiryText(row.expiresAt, t))}
+      {field(
+        t('field.expires'),
+        row.expiresSource === 'manual' && row.expiresState !== 'unknown'
+          ? `${expiryText(row, t)} · ${t('time.manual')}`
+          : expiryText(row, t),
+      )}
       <Text> </Text>
       <Text dimColor>{[t('hint.copy'), t('hint.reveal'), t('hint.verify')].join('  ')}</Text>
     </Box>
