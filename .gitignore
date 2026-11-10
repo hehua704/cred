@@ -19,3 +19,6 @@ config.toml
 npm-debug.log*
 .DS_Store
 Thumbs.db
+
+# 本地 npm 缓存（沙箱内安装依赖用）
+.npm-cache/

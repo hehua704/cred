@@ -220,8 +220,17 @@ function fail(msg: string, code = 1): never {
   process.exit(code);
 }
 
+function initDir(): string {
+  const explicit = val('--dir') ?? process.env[`${ENV_PREFIX}DIR`];
+  if (explicit) return resolve(expandHome(explicit));
+  // init 的语义就是“在当前项目建一个”，绝不回退到全局默认目录，
+  // 否则在空目录里 init 会误改其他项目的凭证库。
+  return join(process.cwd(), '.cred');
+}
+
 function cmdInit(): void {
   const from = val('--from');
+  const DIR = initDir();
   mkdirSync(DIR, { recursive: true, mode: 0o700 });
   try {
     chmodSync(DIR, 0o700);

@@ -14,14 +14,30 @@ function project() {
   return mkdtempSync(join(tmpdir(), 'cred-test-'));
 }
 
-function run(cwd, args, input) {
+// 每个测试用独立的 HOME/XDG，避免读到开发机上的 ~/.config/cred
+function sandboxHome() {
+  return mkdtempSync(join(tmpdir(), 'cred-home-'));
+}
+
+function runWithHome(cwd, args, input, home) {
   const res = spawnSync(process.execPath, [BIN, ...args], {
     cwd,
     input,
     encoding: 'utf8',
-    env: { ...process.env, LANG: 'zh_CN.UTF-8', CRED_DIR: '', CRED_LANG: '' },
+    env: {
+      ...process.env,
+      LANG: 'zh_CN.UTF-8',
+      CRED_DIR: '',
+      CRED_LANG: '',
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
+    },
   });
   return { code: res.status, out: res.stdout.trim(), err: res.stderr.trim() };
+}
+
+function run(cwd, args, input) {
+  return runWithHome(cwd, args, input, sandboxHome());
 }
 
 test('init 创建 .cred 并带上 .gitignore', () => {
@@ -166,4 +182,44 @@ test('list 支持平台筛选', () => {
   const rows = JSON.parse(run(dir, ['list', 'github', '--json']).out);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].platform, 'github');
+});
+
+test('cred use 设置默认目录后可在其他目录使用', () => {
+  const home = sandboxHome();
+  const dirA = project();
+  const dirB = project();
+  runWithHome(dirA, ['init'], undefined, home);
+  runWithHome(dirA, ['set', 'github'], 'ghp_aaa\n', home);
+
+  // 未设置前：dirB 里读不到
+  assert.equal(runWithHome(dirB, ['has', 'github'], undefined, home).code, 1);
+
+  const use = runWithHome(dirA, ['use', join(dirA, '.cred')], undefined, home);
+  assert.equal(use.code, 0);
+  assert.ok(use.out.includes('默认目录已设为'));
+
+  // 设置后：dirB 里也能读到
+  assert.equal(runWithHome(dirB, ['has', 'github'], undefined, home).code, 0);
+  const got = runWithHome(dirB, ['get', 'github'], undefined, home);
+  assert.equal(got.out, 'ghp_aaa');
+});
+
+test('init 只写当前目录，不会误改全局默认库', () => {
+  const home = sandboxHome();
+  const dirA = project();
+  const dirB = project();
+
+  runWithHome(dirA, ['init'], undefined, home);
+  runWithHome(dirA, ['set', 'github'], 'ghp_real\n', home);
+  runWithHome(dirA, ['use', join(dirA, '.cred')], undefined, home);
+
+  // 在 dirB 里 init：必须建在 dirB，而不是写进 dirA
+  const r = runWithHome(dirB, ['init'], undefined, home);
+  assert.equal(r.code, 0);
+  assert.ok(r.out.includes(join(dirB, '.cred')), `输出应指向 dirB: ${r.out}`);
+
+  // dirA 的 token 不能被覆盖
+  const got = runWithHome(dirA, ['get', 'github'], undefined, home);
+  assert.equal(got.out, 'ghp_real');
+  assert.equal(runWithHome(dirB, ['has', 'github'], undefined, home).code, 1);
 });
