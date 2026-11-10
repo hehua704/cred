@@ -30,15 +30,15 @@ process.stdout.write(z.zstdDecompressSync(fs.readFileSync(process.argv[1])).toSt
 | 项 | 值 |
 |---|---|
 | 包名 / 命令 | `@hehua704/cred` / `cred` |
-| 当前版本 | `0.1.3`（本地；npm `latest` 仍是 0.1.2，等推送后发） |
+| 当前版本 | `0.1.3`（npm `latest` 与 GitHub Release 均已发布） |
 | 到期语义 | `date` / `never` / `unknown` 三态，缺失一律显示「未知」 |
-| 仓库 | `https://github.com/hehua704/cred`，远端停在 `cf6919d` |
-| 本地状态 | 领先远端 2 个提交（0.1.2 的 init 修复 + 0.1.3 的 config 修复），**均未推送** |
+| 仓库 | `https://github.com/hehua704/cred`，main 与 tag `v0.1.3` 已同步 |
+| 本地状态 | 与远端一致；Release `v0.1.3` 带 `hehua704-cred-0.1.3.tgz` |
 | 技术栈 | Node ≥22 · TypeScript 5.9 · Ink 8 + React 19 · ESM |
 | 数据目录 | `./.cred`（本机默认 `/root/project/凭证管理器/.cred`） |
 | 全局命令 | 已 `npm link`，`/usr/local/bin/cred` 指向本仓库 |
-| 测试 | 26 项全过（`npm test`） |
-| 缺口 | 四个平台的 token 都在事故后删除了，需要重新写入 |
+| 测试 | 40 项全过（`npm test`） |
+| 缺口 | 无。CI 自动发 npm 需要 `NPM_TOKEN` secret（当前未配，`NPM_PUBLISH=false`） |
 
 一次完整验证：
 
@@ -221,17 +221,13 @@ tag v* → GitHub Actions：test → leak → pack → 发 npm（vars.NPM_PUBLIS
 
 ## 4. 未完成 / 下一步
 
-1. **重新写入 token**（事故后已删）：GitHub PAT、PyPI、npm、crates。
+1. **CI 自动发 npm**（可选）：仓库目前没有 `NPM_TOKEN` secret，所以 `NPM_PUBLISH`
+   暂时设为 `false`——tag 只产 Release 包，npm 走本地 `npm publish`。
+   要交给 CI：加 secret `NPM_TOKEN`，再把变量设回 `true`。
+2. **推送方式**：本机 `github.com:443` 直连不通，用 `mirror` 远端：
    ```bash
-   echo 'github_pat_xxx' | cred set github
-   echo 'pypi-xxx'       | cred set pypi
-   echo 'npm_xxx'        | cred set npm
-   cred recheck
-   ```
-2. **推送到远端并发 0.1.3**（远端还是 `cf6919d`）。直连不通时：
-   ```bash
-   git push mirror main      # mirror = https://ghproxy.net/https://github.com/hehua704/cred.git
-   # 或 node scripts/push-api.mjs hehua704/cred .cred/github-token "fix(cli): …"
+   GIT_ASKPASS=... git push mirror main
+   GIT_ASKPASS=... git push mirror v0.1.3
    ```
 3. npm 上还挂着一个 `0.0.0-stage` 残留（72 小时内可 unpublish，不影响 `latest`）。
 4. `ja` 只有语言条目，没有字典；要用就补 `locales/ja.json`。
