@@ -2,6 +2,14 @@
   "name": "@hehua704/cred",
   "version": "0.1.3",
   "description": "Credential manager TUI for publishing tokens (GitHub / npm / PyPI / crates.io), built with Ink + React.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hehua704/cred.git"
+  },
+  "homepage": "https://github.com/hehua704/cred#readme",
+  "bugs": {
+    "url": "https://github.com/hehua704/cred/issues"
+  },
   "type": "module",
   "bin": {
     "cred": "bin/cred.js"
@@ -42,5 +50,9 @@
     "@types/react": "^19.3.0",
     "ink-testing-library": "^4.0.0",
     "typescript": "^5.9.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

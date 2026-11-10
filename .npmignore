@@ -14,6 +14,8 @@ config.toml
 
 # 开发用文件
 .github/
+SESSION-HANDOFF.md
+.npm-cache/
 test/
 scripts/
 src/
