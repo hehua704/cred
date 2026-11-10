@@ -240,7 +240,10 @@ function cmdInit(): void {
   // 防止 token 被提交：目录内自带 .gitignore
   const gitignore = join(DIR, '.gitignore');
   if (!existsSync(gitignore)) writeFileSync(gitignore, '*\n!.gitignore\n', { mode: 0o600 });
-  if (!existsSync(CONFIG_PATH)) writeConfig(CONFIG_PATH, { locale: 'auto', fallback: 'en' });
+  // config.toml 也必须落在目标目录里：CONFIG_PATH 是“解析后的目录”的路径，
+  // 在空目录里 init 时它指向全局默认库，绝不能往那里写。
+  const cfgPath = join(DIR, 'config.toml');
+  if (!existsSync(cfgPath)) writeConfig(cfgPath, { locale: 'auto', fallback: 'en' });
 
   if (from) {
     const src = resolve(expandHome(from));

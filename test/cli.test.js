@@ -222,4 +222,8 @@ test('init 只写当前目录，不会误改全局默认库', () => {
   const got = runWithHome(dirA, ['get', 'github'], undefined, home);
   assert.equal(got.out, 'ghp_real');
   assert.equal(runWithHome(dirB, ['has', 'github'], undefined, home).code, 1);
+
+  // config.toml 也必须落在 dirB，而不是默认库
+  assert.ok(existsSync(join(dirB, '.cred', 'config.toml')), 'dirB 应有自己的 config.toml');
+  assert.match(readFileSync(join(dirB, '.cred', 'config.toml'), 'utf8'), /locale = "auto"/);
 });

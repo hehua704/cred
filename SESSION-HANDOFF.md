@@ -30,9 +30,9 @@ process.stdout.write(z.zstdDecompressSync(fs.readFileSync(process.argv[1])).toSt
 | 项 | 值 |
 |---|---|
 | 包名 / 命令 | `@hehua704/cred` / `cred` |
-| 当前版本 | `0.1.2`（npm `latest` 也是 0.1.2） |
+| 当前版本 | `0.1.3`（本地；npm `latest` 仍是 0.1.2，等推送后发） |
 | 仓库 | `https://github.com/hehua704/cred`，远端停在 `cf6919d` |
-| 本地 HEAD | `66ba543 fix(cli): cred init only writes ./.cred…`（**未推送**） |
+| 本地状态 | 领先远端 2 个提交（0.1.2 的 init 修复 + 0.1.3 的 config 修复），**均未推送** |
 | 技术栈 | Node ≥22 · TypeScript 5.9 · Ink 8 + React 19 · ESM |
 | 数据目录 | `./.cred`（本机默认 `/root/project/凭证管理器/.cred`） |
 | 全局命令 | 已 `npm link`，`/usr/local/bin/cred` 指向本仓库 |
@@ -83,6 +83,8 @@ src/types.ts         共享类型
 
 **`cred init` 是唯一例外**：只看 `--dir` / `CRED_DIR`，否则**永远写当前目录**，绝不走全局回退。
 这是 0.1.2 修的 bug——早先测试在临时目录里 `init`，写进了真实库，覆盖了真 token。
+同一类问题还有第二处：`config.toml` 原先写在 `CONFIG_PATH`（解析后的目录，可能就是全局库）上，
+0.1.3 改成写 `join(DIR, 'config.toml')`，测试里加了断言。
 
 ### 2.3 存储格式
 
@@ -202,6 +204,7 @@ tag v* → GitHub Actions：test → leak → pack → 发 npm（vars.NPM_PUBLIS
 | `npm pack --dry-run --json` 空输出 | npm 12 行为差异 | 改用真实打包 + `tar -tzf` 校验 |
 | 命令必须 `cd` 到项目才能用 | 目录解析只认 `./.cred` | 加 `cred use` 设全局默认 |
 | 测试覆盖了真实 token | `init` 回退到了全局默认库 | 0.1.2：init 锁死当前目录 + 测试隔离 HOME |
+| 新目录 init 后没有 `config.toml` | 写的是解析后的 `CONFIG_PATH`，落到全局库 | 0.1.3：改写到目标目录，加断言 |
 | crates.io 显示 403 | `/api/v1/me` 已限制为仅网页，合法 token 也 403 | 按错误文案判断，`website` 也算有效 |
 | PyPI 想校验用户名 | 没有 whoami 接口 | 只做格式校验，如实标「格式正确」 |
 | 把 PyPI token 贴进对话 | 已吊销重建 | 铁律：只走 `cred set` 或写文件 |
@@ -217,7 +220,7 @@ tag v* → GitHub Actions：test → leak → pack → 发 npm（vars.NPM_PUBLIS
    echo 'npm_xxx'        | cred set npm
    cred recheck
    ```
-2. **把 `66ba543` 推到远端**（远端还是 `cf6919d`）。直连不通时：
+2. **推送到远端并发 0.1.3**（远端还是 `cf6919d`）。直连不通时：
    ```bash
    git push mirror main      # mirror = https://ghproxy.net/https://github.com/hehua704/cred.git
    # 或 node scripts/push-api.mjs hehua704/cred .cred/github-token "fix(cli): …"
