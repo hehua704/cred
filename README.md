@@ -163,29 +163,35 @@ cred list                        # 看状态和到期（未知 = 平台没告知
 ## 代理（按需使用，不污染环境）
 
 有些网络只能走代理访问特定站点，但把 `HTTPS_PROXY` 导出到全局会连累所有命令。
-cred 的做法是：代理地址只存在 `.cred/config.toml`（本地文件、已被 gitignore），
-**只有显式调用才会生效**，不写 shell rc、不写 npm/git 配置。
+cred 把代理放在 `.cred/config.toml`（本地文件、已被 gitignore），**默认关闭**，
+只有显式调用才会生效，不写 shell rc、不写 npm/git 配置。
 
 ```toml
 # .cred/config.toml
 proxy = "http://127.0.0.1:7890"
+proxy_enabled = true          # 总开关，cred proxy on/off 会改这一行
+proxy_bypass = "github.com,api.github.com,registry.npmjs.org,registry.npmmirror.com,ghproxy.net"
 ```
 
-三种用法：
+`proxy_bypass` 里的域名始终直连（生成 `NO_PROXY`）。默认值已经包含
+**GitHub 与 npm** 的常用域名，所以即使代理开着，推 GitHub、装/发 npm 也不走代理。
 
 ```bash
-cred proxy                                  # 打印代理地址
-cred proxy --export                         # export HTTPS_PROXY=… HTTP_PROXY=… NODE_USE_ENV_PROXY=1
-cred run --proxy -- git push origin main    # 只给这一条命令注入代理
+cred proxy                      # 看状态：开关 / 地址 / 直连名单
+cred proxy on                   # 打开（配置保留）
+cred proxy off                  # 关闭，--proxy 随之失效
+cred proxy http://127.0.0.1:7890  # 换地址
+cred proxy --export             # 开启时导出 HTTPS_PROXY/HTTP_PROXY/NO_PROXY/NODE_USE_ENV_PROXY
+cred run --proxy -- curl https://hub.docker.com/   # 只给这一条命令注入代理
 ```
 
-- `cred run -- <cmd>` 只注入 token 环境变量（`GITHUB_TOKEN` / `NPM_TOKEN` / `PYPI_TOKEN` / `CARGO_REGISTRY_TOKEN`），**默认不带代理**；
-- 加 `--proxy` 才额外注入 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NODE_USE_ENV_PROXY=1`
-  （Node 的 `fetch` 默认不读代理变量，需要最后这个开关）；
-- `cred env --proxy` 把代理变量混进 token 输出，适合 `eval "$(cred env --export --proxy)"`。
+- `cred run -- <cmd>` 只注入 token 环境变量，**默认不带代理**；
+- 直连名单里的域名（GitHub、npm）即使开着代理也不会走代理；
+- `cred run --proxy` 在开关打开时才注入代理，开关关着会提示并按直连执行；
+- `NODE_USE_ENV_PROXY=1` 是给 Node 的：`fetch`（undici）默认不读代理变量；
+- `cred env --proxy` 同理，只在开关打开时追加代理变量。
 
-这样其他会话只要 `cred run --proxy -- git push`，拿到的就是「本次命令用代理」，
-命令结束代理就消失，环境本身始终是干净的。
+这样其他会话只要 `cred run --proxy -- <命令>`，命令结束代理就消失，环境始终是干净的。
 
 ## 常用命令
 

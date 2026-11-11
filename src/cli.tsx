@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { createStore, expiryPatch, resolveExpiry } from './store.js';
 import { createT, resolveLocale, AVAILABLE, SUPPORTED } from './i18n.js';
 import { readConfig, writeConfig } from './config.js';
+import type { Config } from './config.js';
 import { findPlatform, PLATFORMS } from './platforms.js';
 import type { Platform } from './types.js';
 import { verify } from './verify.js';
@@ -153,7 +154,8 @@ function usage(): string {
   cred get <p> --field        token | expires | expiresAt | user
   cred has <platform...>      exit 0 only if every target exists
   cred env [platform...]      print GITHUB_TOKEN=... lines (--export for eval)
-  cred proxy [--export]       print the configured proxy (never applied globally)
+  cred proxy [on|off|<url>]   proxy switch / address (never applied globally)
+  cred proxy --export         export proxy vars (only when enabled)
   cred run [--proxy] -- cmd   run cmd with token env; --proxy adds HTTPS_PROXY too
   cred recheck                verify all and write meta.json
 
@@ -381,8 +383,29 @@ function cmdGet(): void {
 }
 
 // 代理只按需拼装，绝不写进全局环境：只影响显式调用（cred run --proxy / cred proxy）。
+// 总开关是 proxy_enabled；bypass 里的域名始终直连（默认 GitHub + npm）。
+const DEFAULT_BYPASS =
+  'github.com,api.github.com,raw.githubusercontent.com,codeload.github.com,objects.githubusercontent.com,registry.npmjs.org,registry.npmmirror.com,ghproxy.net';
+
+function proxyBypass(): string {
+  return config.proxy_bypass || DEFAULT_BYPASS;
+}
+
+function mergeNoProxy(bypass: string): string {
+  const cur = process.env.NO_PROXY || process.env.no_proxy || '';
+  const parts = [...cur.split(','), ...bypass.split(',')]
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join(',');
+}
+
 function proxyEnv(proxy: string): Record<string, string> {
-  return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NODE_USE_ENV_PROXY: '1' };
+  return {
+    HTTPS_PROXY: proxy,
+    HTTP_PROXY: proxy,
+    NODE_USE_ENV_PROXY: '1',
+    NO_PROXY: mergeNoProxy(proxyBypass()),
+  };
 }
 
 function proxyLines(proxy: string, prefix: string): string[] {
@@ -392,13 +415,47 @@ function proxyLines(proxy: string, prefix: string): string[] {
   );
 }
 
+function updateConfig(patch: Partial<Config>): boolean {
+  const cur = readConfig(CONFIG_PATH);
+  return writeConfig(CONFIG_PATH, { ...cur, ...patch });
+}
+
 function cmdProxy(): void {
-  const proxy = config.proxy;
-  if (!proxy) {
-    fail(`未配置代理。在 ${CONFIG_PATH} 加一行：proxy = "http://127.0.0.1:7890"`);
+  const arg = positionals[1];
+
+  if (arg === 'on' || arg === 'off') {
+    if (arg === 'on' && !config.proxy) {
+      fail(`还没有代理地址。先执行：cred proxy http://127.0.0.1:7890`);
+    }
+    if (!updateConfig({ proxy_enabled: arg === 'on' })) {
+      fail(`写入失败: ${CONFIG_PATH}`);
+    }
+    console.log(arg === 'on' ? '代理已开启（仅对 cred run --proxy / cred proxy --export 生效）' : '代理已关闭（配置保留）');
+    return;
   }
-  if (has('--export')) proxyLines(proxy, 'export ').forEach((l) => console.log(l));
-  else console.log(proxy);
+
+  if (arg && !arg.startsWith('-')) {
+    if (!/^https?:\/\/[^\s]+$/.test(arg)) fail(`代理地址要写成 http(s)://host:port`);
+    if (!updateConfig({ proxy: arg })) fail(`写入失败: ${CONFIG_PATH}`);
+    console.log(`代理地址已设为: ${arg}`);
+    return;
+  }
+
+  const enabled = config.proxy_enabled === true;
+  if (has('--export')) {
+    if (!enabled) {
+      console.error('代理未开启（cred proxy on）');
+      return;
+    }
+    if (!config.proxy) fail(`未配置代理地址：cred proxy http://host:port`);
+    proxyLines(config.proxy, 'export ').forEach((l) => console.log(l));
+    return;
+  }
+
+  console.log(`代理: ${enabled ? '开' : '关'}`);
+  console.log(`地址: ${config.proxy ?? '(未设置)'}`);
+  console.log(`直连: ${proxyBypass()}`);
+  console.log(`配置: ${CONFIG_PATH}`);
 }
 
 function cmdRun(): void {
@@ -410,10 +467,13 @@ function cmdRun(): void {
     if (tok) env[ENV_VARS[p.key]] = tok;
   }
   if (has('--proxy')) {
-    if (!config.proxy) {
-      fail(`未配置代理。在 ${CONFIG_PATH} 加一行：proxy = "http://127.0.0.1:7890"`, 2);
+    if (config.proxy_enabled !== true) {
+      console.error('代理未开启，本条命令按直连执行（需要时先 cred proxy on）');
+    } else if (!config.proxy) {
+      console.error('没有配置代理地址，本条命令按直连执行');
+    } else {
+      Object.assign(env, proxyEnv(config.proxy));
     }
-    Object.assign(env, proxyEnv(config.proxy));
   }
   const r = spawnSync(rest[0], rest.slice(1), { stdio: 'inherit', env });
   if (r.error) fail(`无法执行 ${rest[0]}: ${r.error.message}`);
@@ -445,8 +505,12 @@ function cmdEnv(): void {
     count++;
   }
   if (count === 0) fail(`no tokens in ${DIR}`);
-  if (has('--proxy') && config.proxy) {
-    for (const line of proxyLines(config.proxy, prefix)) console.log(line);
+  if (has('--proxy')) {
+    if (config.proxy_enabled === true && config.proxy) {
+      for (const line of proxyLines(config.proxy, prefix)) console.log(line);
+    } else {
+      console.error('代理未开启，未输出代理变量（需要时先 cred proxy on）');
+    }
   }
 }
 

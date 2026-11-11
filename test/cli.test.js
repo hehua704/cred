@@ -231,48 +231,72 @@ test('init 只写当前目录，不会误改全局默认库', () => {
   assert.match(readFileSync(join(dirB, '.cred', 'config.toml'), 'utf8'), /locale = "auto"/);
 });
 
-test('proxy：从 config.toml 读取，且不会被自动注入', () => {
+test('proxy：地址写入配置，默认关闭，状态可读', () => {
   const dir = project();
   run(dir, ['init']);
-  writeFileSync(join(dir, '.cred', 'config.toml'), 'locale = "auto"\nproxy = "http://127.0.0.1:1"\n');
 
-  assert.equal(run(dir, ['proxy']).out, 'http://127.0.0.1:1');
-  const exp = run(dir, ['proxy', '--export']);
-  assert.match(exp.out, /export HTTPS_PROXY='http:\/\/127\.0\.0\.1:1'/);
-  assert.match(exp.out, /export NODE_USE_ENV_PROXY=1/);
+  const set = run(dir, ['proxy', 'http://127.0.0.1:1']);
+  assert.equal(set.code, 0);
+  assert.match(run(dir, ['proxy']).out, /代理: 关/);
+  assert.match(run(dir, ['proxy']).out, /地址: http:\/\/127\.0\.0\.1:1/);
 
-  // 没有配置时不输出，退出码非 0
-  const empty = project();
-  run(empty, ['init']);
-  assert.notEqual(run(empty, ['proxy']).code, 0);
+  // 未开启时 export 不输出任何东西
+  assert.equal(run(dir, ['proxy', '--export']).out, '');
+
+  // 地址不合法要拒绝
+  assert.notEqual(run(dir, ['proxy', '127.0.0.1:1']).code, 0);
 });
 
-test('run：默认只注入 token，--proxy 才注入代理', () => {
+test('proxy 开关：off 不注入，on 才注入并带 NO_PROXY', () => {
   const dir = project();
   run(dir, ['init']);
   run(dir, ['set', 'github'], 'ghp_abc\n');
-  writeFileSync(join(dir, '.cred', 'config.toml'), 'proxy = "http://127.0.0.1:1"\n');
+  run(dir, ['proxy', 'http://127.0.0.1:1']);
 
-  const probe = 'console.log((process.env.GITHUB_TOKEN||"none")+"|"+(process.env.HTTPS_PROXY||"none"))';
+  const probe =
+    'console.log((process.env.HTTPS_PROXY||"none")+"|"+(process.env.NO_PROXY||"").includes("registry.npmjs.org"))';
 
-  const plain = run(dir, ['run', '--', process.execPath, '-e', probe]);
-  assert.equal(plain.out, 'ghp_abc|none', '默认不能带代理');
+  const off = run(dir, ['run', '--proxy', '--', process.execPath, '-e', probe]);
+  assert.equal(off.out, 'none|false', '关闭时不能注入代理');
 
-  const proxied = run(dir, ['run', '--proxy', '--', process.execPath, '-e', probe]);
-  assert.equal(proxied.out, 'ghp_abc|http://127.0.0.1:1');
+  run(dir, ['proxy', 'on']);
+  const on = run(dir, ['run', '--proxy', '--', process.execPath, '-e', probe]);
+  assert.equal(on.out, 'http://127.0.0.1:1|true', '开启时注入代理，且 npm 在直连名单里');
+
+  run(dir, ['proxy', 'off']);
+  assert.match(run(dir, ['proxy']).out, /代理: 关/);
 });
 
-test('env --proxy 追加代理变量，--export 带 export 前缀', () => {
+test('run：默认只注入 token，不带代理', () => {
   const dir = project();
   run(dir, ['init']);
   run(dir, ['set', 'github'], 'ghp_abc\n');
-  writeFileSync(join(dir, '.cred', 'config.toml'), 'proxy = "http://127.0.0.1:1"\n');
+  run(dir, ['proxy', 'http://127.0.0.1:1']);
+  run(dir, ['proxy', 'on']);
 
-  const plain = run(dir, ['env', '--proxy']).out.split('\n');
-  assert.ok(plain.includes("GITHUB_TOKEN='ghp_abc'"));
-  assert.ok(plain.includes("HTTPS_PROXY='http://127.0.0.1:1'"));
+  const plain = run(dir, [
+    'run',
+    '--',
+    process.execPath,
+    '-e',
+    'console.log((process.env.GITHUB_TOKEN||"none")+"|"+(process.env.HTTPS_PROXY||"none"))',
+  ]);
+  assert.equal(plain.out, 'ghp_abc|none');
+});
 
-  const exp = run(dir, ['env', '--export', '--proxy']).out.split('\n');
-  assert.ok(exp.includes("export GITHUB_TOKEN='ghp_abc'"));
-  assert.ok(exp.includes("export HTTPS_PROXY='http://127.0.0.1:1'"));
+test('env --proxy 只在开启时追加代理变量', () => {
+  const dir = project();
+  run(dir, ['init']);
+  run(dir, ['set', 'github'], 'ghp_abc\n');
+  run(dir, ['proxy', 'http://127.0.0.1:1']);
+
+  const off = run(dir, ['env', '--proxy']).out.split('\n');
+  assert.ok(off.includes("GITHUB_TOKEN='ghp_abc'"));
+  assert.ok(!off.some((l) => l.startsWith('HTTPS_PROXY=')), '关闭时不应出现代理');
+
+  run(dir, ['proxy', 'on']);
+  const on = run(dir, ['env', '--export', '--proxy']).out.split('\n');
+  assert.ok(on.includes("export GITHUB_TOKEN='ghp_abc'"));
+  assert.ok(on.includes("export HTTPS_PROXY='http://127.0.0.1:1'"));
+  assert.ok(on.some((l) => l.startsWith('export NO_PROXY=')));
 });

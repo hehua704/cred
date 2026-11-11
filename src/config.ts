@@ -5,6 +5,10 @@ export interface Config {
   fallback?: string;
   /** 本机代理，仅用于显式调用（cred proxy / cred run --proxy），不注入全局环境。 */
   proxy?: string;
+  /** 代理总开关：关掉时 --proxy 不生效，配置保留。 */
+  proxy_enabled?: boolean;
+  /** 走直连的域名（逗号分隔），默认包含 GitHub 与 npm。 */
+  proxy_bypass?: string;
 }
 
 export function parseToml(text: string): Record<string, unknown> {
@@ -45,6 +49,12 @@ export function writeConfig(path: string, cfg: Config): boolean {
     `fallback = "${cfg.fallback ?? 'en'}"        # 缺失翻译时回退 / fallback locale`,
   ];
   if (cfg.proxy) lines.push(`proxy = "${cfg.proxy}"            # 仅 cred run --proxy / cred proxy 使用`);
+  if (cfg.proxy_enabled !== undefined) {
+    lines.push(`proxy_enabled = ${cfg.proxy_enabled}        # 代理总开关`);
+  }
+  if (cfg.proxy_bypass) {
+    lines.push(`proxy_bypass = "${cfg.proxy_bypass}"  # 这些域名始终直连`);
+  }
   lines.push('');
   try {
     writeFileSync(path, lines.join('\n'), { mode: 0o600 });

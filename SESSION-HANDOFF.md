@@ -164,7 +164,8 @@ src/types.ts         共享类型
 | `cred env --export` | `export …`，可 `eval "$(cred env --export)"` |
 | `cred list --json` | 数组：platform/configured/status/user/expiresAt/updatedAt/mode |
 | `cred run [--proxy] -- <cmd>` | 子进程注入 token 环境变量；`--proxy` 再加 HTTPS_PROXY |
-| `cred proxy [--export]` | 打印/导出代理地址（只按需，不写全局） |
+| `cred proxy [on\|off\|<url>]` | 代理开关/地址；`--export` 仅在开启时输出 |
+| `cred run --proxy -- <cmd>` | 子进程注入代理（开关打开才生效），bypass 里的域名仍直连 |
 
 约定：**单平台给裸值，多平台才加前缀**——最常用的写法不被破坏；缺失项走 stderr，不污染 stdout。
 
