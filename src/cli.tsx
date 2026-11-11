@@ -2,6 +2,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, cpSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -36,13 +37,20 @@ const FLAGS_WITH_VALUE = new Set(['--dir', '--lang', '--width', '--from', '--fie
 interface Parsed {
   flags: Map<string, string | true>;
   pos: string[];
+  /** `--` 之后的原始参数，原样交给子进程（cred run） */
+  rest: string[];
 }
 
 function parseArgs(input: string[]): Parsed {
   const flags = new Map<string, string | true>();
   const pos: string[] = [];
+  let rest: string[] = [];
   for (let i = 0; i < input.length; i++) {
     const a = input[i];
+    if (a === '--') {
+      rest = input.slice(i + 1);
+      break;
+    }
     if (a.startsWith('--')) {
       if (FLAGS_WITH_VALUE.has(a)) {
         flags.set(a, input[++i] ?? '');
@@ -55,10 +63,10 @@ function parseArgs(input: string[]): Parsed {
       pos.push(a);
     }
   }
-  return { flags, pos };
+  return { flags, pos, rest };
 }
 
-const { flags, pos: positionals } = parseArgs(process.argv.slice(2));
+const { flags, pos: positionals, rest } = parseArgs(process.argv.slice(2));
 const has = (n: string) => flags.has(n);
 const val = (n: string) => {
   const v = flags.get(n);
@@ -145,6 +153,8 @@ function usage(): string {
   cred get <p> --field        token | expires | expiresAt | user
   cred has <platform...>      exit 0 only if every target exists
   cred env [platform...]      print GITHUB_TOKEN=... lines (--export for eval)
+  cred proxy [--export]       print the configured proxy (never applied globally)
+  cred run [--proxy] -- cmd   run cmd with token env; --proxy adds HTTPS_PROXY too
   cred recheck                verify all and write meta.json
 
   cred copy <platform>        copy token via OSC 52
@@ -370,6 +380,46 @@ function cmdGet(): void {
   }
 }
 
+// 代理只按需拼装，绝不写进全局环境：只影响显式调用（cred run --proxy / cred proxy）。
+function proxyEnv(proxy: string): Record<string, string> {
+  return { HTTPS_PROXY: proxy, HTTP_PROXY: proxy, NODE_USE_ENV_PROXY: '1' };
+}
+
+function proxyLines(proxy: string, prefix: string): string[] {
+  const e = proxyEnv(proxy);
+  return Object.entries(e).map(([k, v]) =>
+    k === 'NODE_USE_ENV_PROXY' ? `${prefix}${k}=${v}` : `${prefix}${k}='${v}'`,
+  );
+}
+
+function cmdProxy(): void {
+  const proxy = config.proxy;
+  if (!proxy) {
+    fail(`未配置代理。在 ${CONFIG_PATH} 加一行：proxy = "http://127.0.0.1:7890"`);
+  }
+  if (has('--export')) proxyLines(proxy, 'export ').forEach((l) => console.log(l));
+  else console.log(proxy);
+}
+
+function cmdRun(): void {
+  if (rest.length === 0) fail('usage: cred run [--proxy] -- <command> [args...]', 2);
+  const store = createStore(DIR);
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  for (const p of PLATFORMS) {
+    const tok = store.readToken(p.file);
+    if (tok) env[ENV_VARS[p.key]] = tok;
+  }
+  if (has('--proxy')) {
+    if (!config.proxy) {
+      fail(`未配置代理。在 ${CONFIG_PATH} 加一行：proxy = "http://127.0.0.1:7890"`, 2);
+    }
+    Object.assign(env, proxyEnv(config.proxy));
+  }
+  const r = spawnSync(rest[0], rest.slice(1), { stdio: 'inherit', env });
+  if (r.error) fail(`无法执行 ${rest[0]}: ${r.error.message}`);
+  process.exit(r.status ?? 1);
+}
+
 function cmdHas(): void {
   const targets = resolveTargets(positionals.slice(1));
   if (targets.length === 0) process.exit(2);
@@ -395,6 +445,9 @@ function cmdEnv(): void {
     count++;
   }
   if (count === 0) fail(`no tokens in ${DIR}`);
+  if (has('--proxy') && config.proxy) {
+    for (const line of proxyLines(config.proxy, prefix)) console.log(line);
+  }
 }
 
 async function main(): Promise<void> {
@@ -429,6 +482,16 @@ async function main(): Promise<void> {
   }
   if (cmd === 'env') {
     cmdEnv();
+    return;
+  }
+
+  if (cmd === 'proxy') {
+    cmdProxy();
+    return;
+  }
+
+  if (cmd === 'run') {
+    cmdRun();
     return;
   }
 

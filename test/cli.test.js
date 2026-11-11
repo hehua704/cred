@@ -230,3 +230,49 @@ test('init 只写当前目录，不会误改全局默认库', () => {
   assert.ok(existsSync(join(dirB, '.cred', 'config.toml')), 'dirB 应有自己的 config.toml');
   assert.match(readFileSync(join(dirB, '.cred', 'config.toml'), 'utf8'), /locale = "auto"/);
 });
+
+test('proxy：从 config.toml 读取，且不会被自动注入', () => {
+  const dir = project();
+  run(dir, ['init']);
+  writeFileSync(join(dir, '.cred', 'config.toml'), 'locale = "auto"\nproxy = "http://127.0.0.1:1"\n');
+
+  assert.equal(run(dir, ['proxy']).out, 'http://127.0.0.1:1');
+  const exp = run(dir, ['proxy', '--export']);
+  assert.match(exp.out, /export HTTPS_PROXY='http:\/\/127\.0\.0\.1:1'/);
+  assert.match(exp.out, /export NODE_USE_ENV_PROXY=1/);
+
+  // 没有配置时不输出，退出码非 0
+  const empty = project();
+  run(empty, ['init']);
+  assert.notEqual(run(empty, ['proxy']).code, 0);
+});
+
+test('run：默认只注入 token，--proxy 才注入代理', () => {
+  const dir = project();
+  run(dir, ['init']);
+  run(dir, ['set', 'github'], 'ghp_abc\n');
+  writeFileSync(join(dir, '.cred', 'config.toml'), 'proxy = "http://127.0.0.1:1"\n');
+
+  const probe = 'console.log((process.env.GITHUB_TOKEN||"none")+"|"+(process.env.HTTPS_PROXY||"none"))';
+
+  const plain = run(dir, ['run', '--', process.execPath, '-e', probe]);
+  assert.equal(plain.out, 'ghp_abc|none', '默认不能带代理');
+
+  const proxied = run(dir, ['run', '--proxy', '--', process.execPath, '-e', probe]);
+  assert.equal(proxied.out, 'ghp_abc|http://127.0.0.1:1');
+});
+
+test('env --proxy 追加代理变量，--export 带 export 前缀', () => {
+  const dir = project();
+  run(dir, ['init']);
+  run(dir, ['set', 'github'], 'ghp_abc\n');
+  writeFileSync(join(dir, '.cred', 'config.toml'), 'proxy = "http://127.0.0.1:1"\n');
+
+  const plain = run(dir, ['env', '--proxy']).out.split('\n');
+  assert.ok(plain.includes("GITHUB_TOKEN='ghp_abc'"));
+  assert.ok(plain.includes("HTTPS_PROXY='http://127.0.0.1:1'"));
+
+  const exp = run(dir, ['env', '--export', '--proxy']).out.split('\n');
+  assert.ok(exp.includes("export GITHUB_TOKEN='ghp_abc'"));
+  assert.ok(exp.includes("export HTTPS_PROXY='http://127.0.0.1:1'"));
+});

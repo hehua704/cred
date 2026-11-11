@@ -1,6 +1,6 @@
 {
   "name": "@hehua704/cred",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Credential manager TUI for publishing tokens (GitHub / npm / PyPI / crates.io), built with Ink + React.",
   "repository": {
     "type": "git",

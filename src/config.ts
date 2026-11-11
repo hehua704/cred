@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 export interface Config {
   locale?: string;
   fallback?: string;
+  /** 本机代理，仅用于显式调用（cred proxy / cred run --proxy），不注入全局环境。 */
+  proxy?: string;
 }
 
 export function parseToml(text: string): Record<string, unknown> {
@@ -41,8 +43,9 @@ export function writeConfig(path: string, cfg: Config): boolean {
     '',
     `locale = "${cfg.locale ?? 'auto'}"          # zh-CN | en | auto`,
     `fallback = "${cfg.fallback ?? 'en'}"        # 缺失翻译时回退 / fallback locale`,
-    '',
   ];
+  if (cfg.proxy) lines.push(`proxy = "${cfg.proxy}"            # 仅 cred run --proxy / cred proxy 使用`);
+  lines.push('');
   try {
     writeFileSync(path, lines.join('\n'), { mode: 0o600 });
     return true;
