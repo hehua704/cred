@@ -6,6 +6,7 @@
   "status.valid": "有效",
   "status.invalid": "无效",
   "status.formatOk": "格式正确",
+  "status.needUser": "需要用户名（cred set docker --user <名字>）",
   "status.unset": "未配置",
   "status.unknown": "未校验",
   "status.checking": "校验中",

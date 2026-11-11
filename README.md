@@ -139,12 +139,15 @@ cred use --unset                  # 清除
 **Docker Hub** — https://hub.docker.com/settings/security → New access token
 
 - 权限：Read & Write（要推镜像）；只拉取选 Read
-- 用法：`cred get docker` 的输出就是密码
+- **必须带用户名**：Docker Hub 的 hub API 不接受 PAT，只能用 registry 的 token 端点做
+  Basic 认证，所以校验时要知道用户名
   ```bash
-  cred get docker | docker login -u <你的用户名> --password-stdin
+  echo 'dckr_pat_xxx' | cred set docker --user <你的用户名>
+  cred recheck docker        # ● 有效 · <用户名>
   ```
-- 到期时间 Docker Hub 不提供 → 显示「未知」
-- 本机直连 `hub.docker.com` 不通时，需要代理（见下一节），`cred recheck` 会自动走配置的代理
+- 登录：`cred get docker | docker login -u <用户名> --password-stdin`
+- 到期时间不提供 → 显示「未知」
+- 直连 `hub.docker.com` 不通时，`cred recheck` 会自动走配置的代理（见下一节）
 
 ### 写入与自检
 

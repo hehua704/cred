@@ -29,6 +29,7 @@ export interface Row extends Platform {
   expiresAt: string | null;
   expiresState: ExpiryState;
   expiresSource: ExpirySource | null;
+  username: string | null;
   status: Status | null;
 }
 

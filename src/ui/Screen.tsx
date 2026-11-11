@@ -89,6 +89,9 @@ export function statusView(row: Row, t: TFn, th: Theme): StatusView {
       user: s.user,
     };
   }
+  if (s.ok === null && s.code === 'need-user') {
+    return { icon: th.formatOk, color: 'yellow', text: t('status.needUser'), short: t('status.needUser'), user: null };
+  }
   if (s.ok === false) {
     const suffix = s.code && s.code !== 'format' ? ` · ${s.code}` : '';
     return { icon: th.invalid, color: 'red', text: `${t('status.invalid')}${suffix}`, short: t('status.invalid'), user: null };

@@ -6,6 +6,7 @@
   "status.valid": "valid",
   "status.invalid": "invalid",
   "status.formatOk": "format ok",
+  "status.needUser": "username required (cred set docker --user <name>)",
   "status.unset": "unset",
   "status.unknown": "unchecked",
   "status.checking": "checking",

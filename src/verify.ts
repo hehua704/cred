@@ -2,6 +2,11 @@ import type { Expiry, PlatformKey, Status } from './types.js';
 
 const UA = { 'user-agent': 'cred/0.1.2' };
 
+export interface VerifyContext {
+  /** Docker Hub 这类需要用户名的平台会用到 */
+  username?: string | null;
+}
+
 export interface VerifyResult {
   status: Status;
   /** null = 这次没拿到有效响应，调用方应保留旧值；unknown = 平台没说。 */
@@ -102,17 +107,26 @@ async function npm(tok: string): Promise<VerifyResult> {
   return { status: { ok: null, user: null, code: String(r.status) }, expiry };
 }
 
-async function docker(tok: string): Promise<VerifyResult> {
-  // Docker Hub 的 PAT（dckr_pat_…）可以用 Bearer 调 /v2/user/，返回用户名。
-  // 到期时间不对外暴露，所以永远是未知。
-  const r = await probe('https://hub.docker.com/v2/user/', {
-    authorization: `Bearer ${tok}`,
-  });
-  const expiry = r.status === 'ERR' ? NO_RESPONSE : UNKNOWN;
-  if (r.status === 200) {
-    return { status: { ok: true, user: r.body?.username ?? null, code: null }, expiry };
+async function docker(tok: string, ctx?: VerifyContext): Promise<VerifyResult> {
+  // Docker Hub 的 hub API 不接受 PAT（一律 401），只能用 registry 的 token 端点
+  // 做 Basic 认证验证；这需要用户名，所以 set 时要带 --user。
+  const user = ctx?.username?.trim();
+  if (!user) {
+    return {
+      status: { ok: null, user: null, code: 'need-user', note: 'username-required' },
+      expiry: UNKNOWN,
+    };
   }
-  if (r.status === 401) return { status: { ok: false, user: null, code: '401' }, expiry };
+  const basic = Buffer.from(`${user}:${tok}`, 'utf8').toString('base64');
+  const r = await probe(
+    'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/alpine:pull',
+    { authorization: `Basic ${basic}` },
+  );
+  const expiry = r.status === 'ERR' ? NO_RESPONSE : UNKNOWN;
+  if (r.status === 200) return { status: { ok: true, user, code: null }, expiry };
+  if (r.status === 401 || r.status === 403) {
+    return { status: { ok: false, user: null, code: String(r.status) }, expiry };
+  }
   return { status: { ok: null, user: null, code: String(r.status) }, expiry };
 }
 
@@ -125,7 +139,7 @@ async function pypi(tok: string): Promise<VerifyResult> {
   return { status: { ok: null, user: null, code: null, note: 'format-ok' }, expiry: UNKNOWN };
 }
 
-const VALIDATORS: Record<PlatformKey, (tok: string) => Promise<VerifyResult>> = {
+const VALIDATORS: Record<PlatformKey, (tok: string, ctx?: VerifyContext) => Promise<VerifyResult>> = {
   github,
   crates,
   npm,
@@ -133,8 +147,12 @@ const VALIDATORS: Record<PlatformKey, (tok: string) => Promise<VerifyResult>> = 
   docker,
 };
 
-export async function verify(key: PlatformKey, token: string): Promise<VerifyResult> {
+export async function verify(
+  key: PlatformKey,
+  token: string,
+  ctx?: VerifyContext,
+): Promise<VerifyResult> {
   const fn = VALIDATORS[key];
   if (!fn) return { status: { ok: null, user: null, code: 'unsupported' }, expiry: UNKNOWN };
-  return fn(token);
+  return fn(token, ctx);
 }

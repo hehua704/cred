@@ -64,8 +64,8 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         return;
       }
       setMessage(t('msg.checking', { name: row.label }));
-      const { status, expiry } = await verify(row.key, row.tok);
       const prev = store.readMeta()[row.file] ?? {};
+      const { status, expiry } = await verify(row.key, row.tok, { username: prev.username });
       const patch = expiryPatch(prev, expiry);
       patchRow(row.file, { status, ...patch });
       store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
@@ -81,9 +81,10 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     (async () => {
       for (const row of store.rows()) {
         if (cancelled || !row.tok) continue;
-        const { status, expiry } = await verify(row.key, row.tok);
+        const meta = store.readMeta()[row.file] ?? {};
+        const { status, expiry } = await verify(row.key, row.tok, { username: meta.username });
         if (cancelled) return;
-        const patch = expiryPatch(store.readMeta()[row.file] ?? {}, expiry);
+        const patch = expiryPatch(meta, expiry);
         patchRow(row.file, { status, ...patch });
         store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
       }

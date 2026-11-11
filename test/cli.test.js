@@ -315,3 +315,16 @@ test('docker：与其它平台一样的 set/get/env/has', () => {
   assert.equal(docker.configured, true);
   assert.equal(docker.expiresState, 'unknown');
 });
+
+test('docker：--user 记录用户名，供校验和 --field user 使用', () => {
+  const dir = project();
+  run(dir, ['init']);
+  const r = run(dir, ['set', 'docker', '--user', 'hehua704'], 'dckr_pat_abc123\n');
+  assert.equal(r.code, 0);
+  assert.equal(run(dir, ['get', 'docker', '--field', 'user']).out, 'hehua704');
+
+  const rows = JSON.parse(run(dir, ['list', '--json']).out);
+  const docker = rows.find((x) => x.platform === 'docker');
+  assert.equal(docker.configured, true);
+  assert.equal(docker.user, 'hehua704');
+});

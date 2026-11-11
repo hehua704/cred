@@ -10,6 +10,8 @@ export interface MetaEntry {
   /** date = 平台/用户给了准确日期；never = 明确不过期；unknown = 没有依据 */
   expiresState?: ExpiryState;
   expiresSource?: ExpirySource | null;
+  /** Docker Hub 这类需要用户名才能校验的平台 */
+  username?: string;
   lastStatus?: Status | null;
   lastCheckedAt?: string;
 }
@@ -136,6 +138,7 @@ export function createStore(dir: string): Store {
         expiresAt: exp.at,
         expiresState: exp.state,
         expiresSource: exp.source,
+        username: m.username ?? null,
         status: m.lastStatus ?? null,
       };
     });

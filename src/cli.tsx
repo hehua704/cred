@@ -35,7 +35,7 @@ const ENV_VARS: Record<string, string> = {
   docker: 'DOCKERHUB_TOKEN',
 };
 
-const FLAGS_WITH_VALUE = new Set(['--dir', '--lang', '--width', '--from', '--field', '--format']);
+const FLAGS_WITH_VALUE = new Set(['--dir', '--lang', '--width', '--from', '--field', '--format', '--user']);
 
 interface Parsed {
   flags: Map<string, string | true>;
@@ -163,7 +163,7 @@ function usage(): string {
 
   cred copy <platform>        copy token via OSC 52
   cred show <platform>        print token (same as get)
-  echo '...' | cred set <platform>
+  echo '...' | cred set <platform> [--user <name>]   (Docker Hub needs --user)
 
   cred --lang <locale>        ${SUPPORTED.join(' | ')} | auto
   cred --dir <path>           data directory (default ./.cred)
@@ -343,7 +343,7 @@ function cmdGet(): void {
       expiresState: exp.state,
       expiresSource: exp.source,
       updatedAt: m.updatedAt ?? null,
-      user: m.lastStatus?.user ?? null,
+      user: m.lastStatus?.user ?? m.username ?? null,
     });
   }
 
@@ -581,6 +581,7 @@ async function main(): Promise<void> {
     const prev = store.readMeta()[p.file] ?? {};
     const now = new Date().toISOString();
     // 换了 token，旧的到期信息不再属于这枚凭证：回到“未知”，等平台下一次告知。
+    const userFlag = val('--user') ?? prev.username;
     store.setMeta(p.file, {
       createdAt: prev.createdAt ?? now,
       updatedAt: now,
@@ -588,6 +589,7 @@ async function main(): Promise<void> {
       expiresAt: null,
       expiresState: 'unknown',
       expiresSource: null,
+      ...(userFlag ? { username: userFlag } : {}),
     });
     console.log(`${p.label}: saved ${tok.length} chars (mode 600) -> ${join(DIR, p.file)}`);
     return;
@@ -619,7 +621,7 @@ async function main(): Promise<void> {
             platform: r.key,
             configured: !!r.tok,
             status: r.status?.ok ?? null,
-            user: r.status?.user ?? null,
+            user: r.status?.user ?? r.username ?? null,
             expiresAt: r.expiresAt,
             expiresState: r.expiresState,
             expiresSource: r.expiresSource,
@@ -654,8 +656,9 @@ async function main(): Promise<void> {
         console.log(`${pad(row.label, 13)} ${th.unset} ${t('status.unset')}`);
         continue;
       }
-      const { status, expiry } = await verify(row.key, row.tok);
-      const patch = expiryPatch(store.readMeta()[row.file] ?? {}, expiry);
+      const meta = store.readMeta()[row.file] ?? {};
+      const { status, expiry } = await verify(row.key, row.tok, { username: meta.username });
+      const patch = expiryPatch(meta, expiry);
       store.setMeta(row.file, { lastStatus: status, lastCheckedAt: new Date().toISOString(), ...patch });
       const next = { ...row, status, ...patch };
       const st = statusView(next, t, th);
