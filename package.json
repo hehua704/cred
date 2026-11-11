@@ -1,7 +1,7 @@
 {
   "name": "@hehua704/cred",
-  "version": "0.1.6",
-  "description": "Credential manager TUI for publishing tokens (GitHub / npm / PyPI / crates.io), built with Ink + React.",
+  "version": "0.1.7",
+  "description": "Credential manager TUI for publishing tokens (GitHub / npm / PyPI / crates.io / Docker Hub), built with Ink + React.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hehua704/cred.git"
@@ -37,7 +37,8 @@
     "token",
     "tui",
     "ink",
-    "cli"
+    "cli",
+    "docker"
   ],
   "author": "hehua704",
   "license": "MIT",

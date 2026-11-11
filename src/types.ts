@@ -1,4 +1,4 @@
-export type PlatformKey = 'github' | 'crates' | 'pypi' | 'npm';
+export type PlatformKey = 'github' | 'crates' | 'pypi' | 'npm' | 'docker';
 
 export interface Platform {
   key: PlatformKey;

@@ -109,7 +109,7 @@ test('list --json 输出可解析数组', () => {
   run(dir, ['init']);
   run(dir, ['set', 'github'], 'ghp_abc\n');
   const rows = JSON.parse(run(dir, ['list', '--json']).out);
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 5);
   assert.equal(rows[0].platform, 'github');
   assert.equal(rows[0].configured, true);
   assert.equal(rows[1].configured, false);
@@ -299,4 +299,19 @@ test('env --proxy 只在开启时追加代理变量', () => {
   assert.ok(on.includes("export GITHUB_TOKEN='ghp_abc'"));
   assert.ok(on.includes("export HTTPS_PROXY='http://127.0.0.1:1'"));
   assert.ok(on.some((l) => l.startsWith('export NO_PROXY=')));
+});
+
+test('docker：与其它平台一样的 set/get/env/has', () => {
+  const dir = project();
+  run(dir, ['init']);
+  const set = run(dir, ['set', 'docker'], 'dckr_pat_abc123\n');
+  assert.equal(set.code, 0);
+  assert.equal(run(dir, ['get', 'docker']).out, 'dckr_pat_abc123');
+  assert.equal(run(dir, ['has', 'docker']).code, 0);
+  assert.ok(run(dir, ['env']).out.includes("DOCKERHUB_TOKEN='dckr_pat_abc123'"));
+
+  const rows = JSON.parse(run(dir, ['list', '--json']).out);
+  const docker = rows.find((r) => r.platform === 'docker');
+  assert.equal(docker.configured, true);
+  assert.equal(docker.expiresState, 'unknown');
 });

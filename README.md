@@ -1,6 +1,6 @@
 # @hehua704/cred
 
-凭证管理器 —— 用 Ink + React 写的终端 UI，管理 GitHub PAT、npm、PyPI、crates.io 的发布令牌。
+凭证管理器 —— 用 Ink + React 写的终端 UI，管理 GitHub PAT、npm、PyPI、crates.io、Docker Hub 的发布令牌。
 中英双语、宽度感知、SSH 可复制、默认打码，并提供给脚本 / DSH 取 token 的机器接口。
 
 ```
@@ -135,6 +135,16 @@ cred use --unset                  # 清除
 
 - Scopes：`publish-new`、`publish-update`、`yank`
 - 默认不过期，必须手动轮换
+
+**Docker Hub** — https://hub.docker.com/settings/security → New access token
+
+- 权限：Read & Write（要推镜像）；只拉取选 Read
+- 用法：`cred get docker` 的输出就是密码
+  ```bash
+  cred get docker | docker login -u <你的用户名> --password-stdin
+  ```
+- 到期时间 Docker Hub 不提供 → 显示「未知」
+- 本机直连 `hub.docker.com` 不通时，需要代理（见下一节），`cred recheck` 会自动走配置的代理
 
 ### 写入与自检
 

@@ -5,6 +5,7 @@ export const PLATFORMS: Platform[] = [
   { key: 'crates', file: 'crates-token', label: 'crates.io' },
   { key: 'pypi', file: 'pypi-token', label: 'PyPI' },
   { key: 'npm', file: 'npm-token', label: 'npm' },
+  { key: 'docker', file: 'docker-token', label: 'Docker Hub' },
 ];
 
 export const PLATFORM_KEYS: PlatformKey[] = PLATFORMS.map((p) => p.key);

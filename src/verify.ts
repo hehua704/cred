@@ -102,6 +102,20 @@ async function npm(tok: string): Promise<VerifyResult> {
   return { status: { ok: null, user: null, code: String(r.status) }, expiry };
 }
 
+async function docker(tok: string): Promise<VerifyResult> {
+  // Docker Hub 的 PAT（dckr_pat_…）可以用 Bearer 调 /v2/user/，返回用户名。
+  // 到期时间不对外暴露，所以永远是未知。
+  const r = await probe('https://hub.docker.com/v2/user/', {
+    authorization: `Bearer ${tok}`,
+  });
+  const expiry = r.status === 'ERR' ? NO_RESPONSE : UNKNOWN;
+  if (r.status === 200) {
+    return { status: { ok: true, user: r.body?.username ?? null, code: null }, expiry };
+  }
+  if (r.status === 401) return { status: { ok: false, user: null, code: '401' }, expiry };
+  return { status: { ok: null, user: null, code: String(r.status) }, expiry };
+}
+
 async function pypi(tok: string): Promise<VerifyResult> {
   // PyPI 没有 whoami 接口，只能做格式校验；到期信息也没有。
   if (!tok.startsWith('pypi-')) {
@@ -116,6 +130,7 @@ const VALIDATORS: Record<PlatformKey, (tok: string) => Promise<VerifyResult>> = 
   crates,
   npm,
   pypi,
+  docker,
 };
 
 export async function verify(key: PlatformKey, token: string): Promise<VerifyResult> {

@@ -32,6 +32,7 @@ const ENV_VARS: Record<string, string> = {
   npm: 'NPM_TOKEN',
   pypi: 'PYPI_TOKEN',
   crates: 'CARGO_REGISTRY_TOKEN',
+  docker: 'DOCKERHUB_TOKEN',
 };
 
 const FLAGS_WITH_VALUE = new Set(['--dir', '--lang', '--width', '--from', '--field', '--format']);
@@ -699,6 +700,33 @@ async function main(): Promise<void> {
   }
 
   render(<App store={store} locale={locale} configPath={CONFIG_PATH} config={config} ascii={ascii} />);
+}
+
+// 需要联网的命令：代理开启时用 --use-env-proxy 重新执行自己。
+// 代理只作用于这一个进程，不写进全局环境；子进程继承的也只是本次调用的环境。
+const NETWORK_COMMANDS = new Set(['', 'recheck']);
+if (
+  config.proxy_enabled === true &&
+  config.proxy &&
+  NETWORK_COMMANDS.has(positionals[0] ?? '') &&
+  !process.env.CRED_PROXY_REEXEC &&
+  process.allowedNodeEnvironmentFlags.has('--use-env-proxy')
+) {
+  const r = spawnSync(
+    process.execPath,
+    ['--use-env-proxy', process.argv[1], ...process.argv.slice(2)],
+    {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        HTTPS_PROXY: config.proxy,
+        HTTP_PROXY: config.proxy,
+        NO_PROXY: mergeNoProxy(proxyBypass()),
+        CRED_PROXY_REEXEC: '1',
+      },
+    },
+  );
+  process.exit(r.status ?? 1);
 }
 
 main().catch((err) => {
