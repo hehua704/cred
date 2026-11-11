@@ -34,6 +34,7 @@ function state(locale, columns, ascii = false, mode = 'list') {
     rows, sel: 0, mode, input: null, message: '', revealed: false,
     locale, langIndex: 0, dir: '/root/.dsh-publish', columns,
     configPath: '/root/.dsh-publish/config.toml', configLocale: 'auto', ascii,
+    proxy: { enabled: true, url: 'http://127.0.0.1:7890', bypass: 'github.com,registry.npmjs.org', sel: 0 },
   };
 }
 
@@ -69,4 +70,28 @@ test('语言界面同样等宽', () => {
   const { lastFrame } = render(React.createElement(Screen, { state: state('zh-CN', 82, false, 'lang'), t: createT('zh-CN') }));
   const widths = frameWidths(lastFrame());
   assert.equal(widths.size, 1);
+});
+
+test('代理界面：两种语言、三档宽度都等宽', () => {
+  for (const locale of ['zh-CN', 'en']) {
+    for (const columns of [60, 76, 100]) {
+      const st = state(locale, columns, false, 'proxy');
+      const { lastFrame } = render(
+        React.createElement(Screen, { state: st, t: createT(locale) }),
+      );
+      const widths = frameWidths(lastFrame());
+      assert.equal(widths.size, 1, `${locale} @ ${columns}: ${JSON.stringify([...widths])}`);
+    }
+  }
+});
+
+test('代理界面：显示开关、地址与直连名单', () => {
+  const st = state('zh-CN', 90, false, 'proxy');
+  st.proxy = { enabled: false, url: 'http://127.0.0.1:7890', bypass: 'github.com,registry.npmjs.org', sel: 1 };
+  const { lastFrame } = render(React.createElement(Screen, { state: st, t: createT('zh-CN') }));
+  const frame = stripAnsi(lastFrame());
+  assert.match(frame, /代理设置/);
+  assert.match(frame, /启用代理\s+关/);
+  assert.match(frame, /127\.0\.0\.1:7890/);
+  assert.match(frame, /github\.com/);
 });

@@ -3,7 +3,7 @@ import { useApp, useInput, useStdout } from 'ink';
 import { Screen } from './Screen.js';
 import { createT } from '../i18n.js';
 import { verify } from '../verify.js';
-import { writeConfig } from '../config.js';
+import { writeConfig, DEFAULT_BYPASS } from '../config.js';
 import { expiryPatch } from '../store.js';
 import { parseExpiryInput } from '../expiry.js';
 import type { Config } from '../config.js';
@@ -20,6 +20,11 @@ export interface AppProps {
 
 const LOCALES = ['zh-CN', 'en', 'ja'];
 
+// 有些终端把退格发成原始控制字符，key.backspace 不一定为真
+function isBackspace(key: any, inputStr: string): boolean {
+  return !!(key.backspace || key.delete) || inputStr === '\x7f' || inputStr === '\b';
+}
+
 export function App({ store, locale: initialLocale, configPath, config, ascii }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -31,6 +36,10 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
   const [revealed, setRevealed] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
   const [langIndex, setLangIndex] = useState(Math.max(0, LOCALES.indexOf(initialLocale)));
+  const [proxyEnabled, setProxyEnabled] = useState(config.proxy_enabled === true);
+  const [proxyUrl, setProxyUrl] = useState(config.proxy ?? '');
+  const [proxyBypass, setProxyBypass] = useState(config.proxy_bypass || DEFAULT_BYPASS);
+  const [proxySel, setProxySel] = useState(0);
   const termColumns = () => (stdout as unknown as { columns?: number })?.columns ?? 80;
   const [columns, setColumns] = useState(termColumns());
 
@@ -128,6 +137,15 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     [patchRow, store, t],
   );
 
+  const saveProxy = useCallback(
+    (patch: Partial<Config>) => {
+      Object.assign(config, patch);
+      const ok = writeConfig(configPath, config);
+      setMessage(ok ? t('proxy.saved') : t('msg.writeFail', { code: 'EACCES' }));
+    },
+    [config, configPath, t],
+  );
+
   const handleList = useCallback(
     (inputStr: string, key: any) => {
       const row = rows[sel];
@@ -208,6 +226,12 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
       if (inputStr === 'l') {
         setLangIndex(Math.max(0, LOCALES.indexOf(locale)));
         setMode('lang');
+        return;
+      }
+      if (inputStr === 'p') {
+        setProxySel(0);
+        setMessage('');
+        setMode('proxy');
       }
     },
     [copy, exit, locale, patchRow, rows, runVerify, sel, store, t],
@@ -239,9 +263,84 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     [config, configPath, langIndex, t],
   );
 
+  const handleProxy = useCallback(
+    (inputStr: string, key: any) => {
+      if (key.escape) {
+        setMode('list');
+        return;
+      }
+      if (key.upArrow || inputStr === 'k') {
+        setProxySel((i) => (i + 2) % 3);
+        return;
+      }
+      if (key.downArrow || inputStr === 'j') {
+        setProxySel((i) => (i + 1) % 3);
+        return;
+      }
+      if (key.return || inputStr === ' ') {
+        if (proxySel === 0) {
+          const next = !proxyEnabled;
+          setProxyEnabled(next);
+          saveProxy({ proxy_enabled: next });
+          return;
+        }
+        if (proxySel === 1) {
+          setInput({
+            kind: 'proxy-url',
+            file: '',
+            label: t('proxy.address'),
+            buffer: proxyUrl,
+            stage: 'input',
+            replacing: false,
+          });
+          return;
+        }
+        setInput({
+          kind: 'proxy-bypass',
+          file: '',
+          label: t('proxy.bypass'),
+          buffer: proxyBypass,
+          stage: 'input',
+          replacing: false,
+        });
+      }
+    },
+    [proxyBypass, proxyEnabled, proxySel, proxyUrl, saveProxy, t],
+  );
+
   const handleInput = useCallback(
     (inputStr: string, key: any) => {
       if (!input) return;
+      if (input.kind === 'proxy-url' || input.kind === 'proxy-bypass') {
+        if (key.escape) {
+          setInput(null);
+          return;
+        }
+        if (key.return) {
+          const v = input.buffer.trim();
+          if (input.kind === 'proxy-url') {
+            if (v && !/^https?:\/\/\S+$/.test(v)) {
+              setMessage(t('proxy.invalid'));
+              return;
+            }
+            setProxyUrl(v);
+            saveProxy({ proxy: v || undefined });
+          } else {
+            const next = v || DEFAULT_BYPASS;
+            setProxyBypass(next);
+            saveProxy({ proxy_bypass: next });
+          }
+          setInput(null);
+          return;
+        }
+        if (isBackspace(key, inputStr)) {
+          setInput({ ...input, buffer: input.buffer.slice(0, -1) });
+          return;
+        }
+        if (inputStr) setInput({ ...input, buffer: input.buffer + inputStr.replace(/[\r\n\t]/g, '') });
+        return;
+      }
+
       if (input.kind === 'expiry') {
         if (key.escape) {
           setInput(null);
@@ -275,7 +374,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
           );
           return;
         }
-        if (key.backspace || key.delete) {
+        if (isBackspace(key, inputStr)) {
           setInput({ ...input, buffer: input.buffer.slice(0, -1) });
           return;
         }
@@ -320,6 +419,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
   useInput((inputStr, key) => {
     if (input) return handleInput(inputStr, key);
     if (mode === 'lang') return handleLang(inputStr, key);
+    if (mode === 'proxy') return handleProxy(inputStr, key);
     return handleList(inputStr, key);
   });
 
@@ -337,6 +437,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     configPath,
     configLocale: config.locale ?? 'auto',
     ascii,
+    proxy: { enabled: proxyEnabled, url: proxyUrl, bypass: proxyBypass, sel: proxySel },
   };
 
   return <Screen state={state} t={t} />;

@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import type { Row, ScreenState } from '../types.js';
 import type { TFn } from '../i18n.js';
-import { width as textWidth } from '../width.js';
+import { width as textWidth, truncate } from '../width.js';
 
 export interface Theme {
   border: 'round' | 'classic';
@@ -218,6 +218,61 @@ export function LangScreen({ state, t, th }: { state: ScreenState; t: TFn; th: T
   );
 }
 
+export function ProxyScreen({ state, t, th }: { state: ScreenState; t: TFn; th: Theme }) {
+  const p = state.proxy;
+  const W = Math.min(state.columns, 110);
+  const maxVal = Math.max(12, W - 20);
+  const rows = [
+    { key: 'enabled', label: t('proxy.enabled'), value: p.enabled ? t('proxy.on') : t('proxy.off') },
+    { key: 'url', label: t('proxy.address'), value: p.url || t('proxy.none') },
+    { key: 'bypass', label: t('proxy.bypass'), value: p.bypass },
+  ];
+  return (
+    <Box flexDirection="column" width={W}>
+      <Box borderStyle={th.border} borderColor="gray" flexDirection="column">
+        <Box paddingX={1}>
+          <Text bold>{t('proxy.title')}</Text>
+        </Box>
+        <Sep th={th} />
+        <Box paddingX={1} flexDirection="column" height={5}>
+          <Text> </Text>
+          {rows.map((r, i) => (
+            <Box key={r.key}>
+              <Box width={2}>
+                <Text color={i === p.sel ? 'blue' : undefined}>{i === p.sel ? th.pointer : ' '}</Text>
+              </Box>
+              <Box width={10}>
+                <Text bold={i === p.sel}>{r.label}</Text>
+              </Box>
+              <Text wrap="truncate">{truncate(r.value, maxVal)}</Text>
+            </Box>
+          ))}
+        </Box>
+        <Box paddingX={1} flexDirection="column">
+          {state.input ? (
+            <Box>
+              <Text color="yellow">{`${state.input.label} `}</Text>
+              <Text>{truncate(state.input.buffer, maxVal)}</Text>
+            </Box>
+          ) : (
+            <Text dimColor wrap="truncate">{`${t('proxy.config')}: ${state.configPath}`}</Text>
+          )}
+        </Box>
+        <Sep th={th} top />
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">
+            {state.input
+              ? state.input.kind === 'proxy-url'
+                ? t('input.proxyUrlHint')
+                : t('input.proxyBypassHint')
+              : [t('hint.select'), t('proxy.enterHint'), t('hint.back')].join('   ')}
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 // 英文文案比中文长：先试双空格，放不下退单空格
 function fitHints(parts: string[], maxWidth: number): string {
   const two = parts.join('  ') + ' ';
@@ -232,6 +287,7 @@ export function Screen({ state, t }: { state: ScreenState; t: TFn }) {
   const W = Math.max(60, Math.min(state.columns, 110));
 
   if (state.mode === 'lang') return <LangScreen state={state} t={t} th={th} />;
+  if (state.mode === 'proxy') return <ProxyScreen state={state} t={t} th={th} />;
 
   const langName = state.locale === 'zh-CN' ? '中文' : state.locale === 'en' ? 'EN' : state.locale.toUpperCase();
   const twoPane = W >= 76;
@@ -297,6 +353,7 @@ export function Screen({ state, t }: { state: ScreenState; t: TFn }) {
                   t('hint.reveal'),
                   t('hint.verify'),
                   t('hint.expiry'),
+                  t('hint.proxy'),
                   t('hint.add'),
                   t('hint.delete'),
                   t('hint.lang'),

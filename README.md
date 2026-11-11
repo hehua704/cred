@@ -185,6 +185,8 @@ cred proxy --export             # 开启时导出 HTTPS_PROXY/HTTP_PROXY/NO_PROX
 cred run --proxy -- curl https://hub.docker.com/   # 只给这一条命令注入代理
 ```
 
+交互界面里按 `p` 也能改：上下选择，Enter 切换开关或编辑地址/直连名单，Esc 返回。
+
 - `cred run -- <cmd>` 只注入 token 环境变量，**默认不带代理**；
 - 直连名单里的域名（GitHub、npm）即使开着代理也不会走代理；
 - `cred run --proxy` 在开关打开时才注入代理，开关关着会提示并按直连执行；
@@ -288,6 +290,7 @@ export CRED_DIR=/path/to/.cred
 | `e` | 编辑有效期（`2027-02-07` / `+90d` / `none` 不过期 / 留空=未知） |
 | `a` | 新增 / 替换 token |
 | `d` | 清除元信息（不删 token 文件） |
+| `p` | 代理设置（开关 / 地址 / 直连名单） |
 | `l` | 切换语言 |
 | `q` | 退出 |
 

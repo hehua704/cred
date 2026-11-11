@@ -32,10 +32,17 @@ export interface Row extends Platform {
   status: Status | null;
 }
 
-export type Mode = 'list' | 'lang';
+export type Mode = 'list' | 'lang' | 'proxy';
+
+export interface ProxyState {
+  enabled: boolean;
+  url: string;
+  bypass: string;
+  sel: number;
+}
 
 export interface InputState {
-  kind: 'token' | 'expiry';
+  kind: 'token' | 'expiry' | 'proxy-url' | 'proxy-bypass';
   file: string;
   label: string;
   buffer: string;
@@ -57,4 +64,5 @@ export interface ScreenState {
   configPath: string;
   configLocale: string;
   ascii: boolean;
+  proxy: ProxyState;
 }

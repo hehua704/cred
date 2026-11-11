@@ -10,6 +10,7 @@ import { createStore, expiryPatch, resolveExpiry } from './store.js';
 import { createT, resolveLocale, AVAILABLE, SUPPORTED } from './i18n.js';
 import { readConfig, writeConfig } from './config.js';
 import type { Config } from './config.js';
+import { DEFAULT_BYPASS } from './config.js';
 import { findPlatform, PLATFORMS } from './platforms.js';
 import type { Platform } from './types.js';
 import { verify } from './verify.js';
@@ -384,9 +385,6 @@ function cmdGet(): void {
 
 // 代理只按需拼装，绝不写进全局环境：只影响显式调用（cred run --proxy / cred proxy）。
 // 总开关是 proxy_enabled；bypass 里的域名始终直连（默认 GitHub + npm）。
-const DEFAULT_BYPASS =
-  'github.com,api.github.com,raw.githubusercontent.com,codeload.github.com,objects.githubusercontent.com,registry.npmjs.org,registry.npmmirror.com,ghproxy.net';
-
 function proxyBypass(): string {
   return config.proxy_bypass || DEFAULT_BYPASS;
 }
@@ -681,10 +679,20 @@ async function main(): Promise<void> {
     configPath: CONFIG_PATH,
     configLocale: config.locale ?? 'auto',
     ascii,
+    proxy: {
+      enabled: config.proxy_enabled === true,
+      url: config.proxy ?? '',
+      bypass: config.proxy_bypass || DEFAULT_BYPASS,
+      sel: 0,
+    },
   };
 
-  if (has('--preview') || has('--preview-lang')) {
-    const state: ScreenState = has('--preview-lang') ? { ...baseState, mode: 'lang' } : baseState;
+  if (has('--preview') || has('--preview-lang') || has('--preview-proxy')) {
+    const state: ScreenState = has('--preview-lang')
+      ? { ...baseState, mode: 'lang' }
+      : has('--preview-proxy')
+        ? { ...baseState, mode: 'proxy' }
+        : baseState;
     const instance = render(<Screen state={state} t={t} />);
     setTimeout(() => instance.unmount(), 120);
     return;

@@ -1,5 +1,9 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
+/** 默认直连名单：GitHub 与 npm 不走代理，ghproxy 也直连。 */
+export const DEFAULT_BYPASS =
+  'github.com,api.github.com,raw.githubusercontent.com,codeload.github.com,objects.githubusercontent.com,registry.npmjs.org,registry.npmmirror.com,ghproxy.net';
+
 export interface Config {
   locale?: string;
   fallback?: string;
