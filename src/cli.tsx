@@ -582,13 +582,15 @@ async function main(): Promise<void> {
     const now = new Date().toISOString();
     // 换了 token，旧的到期信息不再属于这枚凭证：回到“未知”，等平台下一次告知。
     const userFlag = val('--user') ?? prev.username;
+    // 到期默认按 90 天记（source=default）；平台后续给出准确值时会覆盖。
+    const expiresAt = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
     store.setMeta(p.file, {
       createdAt: prev.createdAt ?? now,
       updatedAt: now,
       lastStatus: null,
-      expiresAt: null,
-      expiresState: 'unknown',
-      expiresSource: null,
+      expiresAt,
+      expiresState: 'date',
+      expiresSource: 'default',
       ...(userFlag ? { username: userFlag } : {}),
     });
     console.log(`${p.label}: saved ${tok.length} chars (mode 600) -> ${join(DIR, p.file)}`);
@@ -673,7 +675,7 @@ async function main(): Promise<void> {
     rows: store.rows(),
     sel: 0,
     mode: 'list',
-    input: null,
+    form: null,
     message: '',
     revealed: false,
     locale,

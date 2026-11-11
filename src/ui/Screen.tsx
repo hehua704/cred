@@ -252,23 +252,51 @@ export function ProxyScreen({ state, t, th }: { state: ScreenState; t: TFn; th: 
           ))}
         </Box>
         <Box paddingX={1} flexDirection="column">
-          {state.input ? (
-            <Box>
-              <Text color="yellow">{`${state.input.label} `}</Text>
-              <Text>{truncate(state.input.buffer, maxVal)}</Text>
-            </Box>
-          ) : (
-            <Text dimColor wrap="truncate">{`${t('proxy.config')}: ${state.configPath}`}</Text>
-          )}
+          <Text dimColor wrap="truncate">{`${t('proxy.config')}: ${state.configPath}`}</Text>
         </Box>
         <Sep th={th} top />
         <Box paddingX={1}>
           <Text dimColor wrap="truncate">
-            {state.input
-              ? state.input.kind === 'proxy-url'
-                ? t('input.proxyUrlHint')
-                : t('input.proxyBypassHint')
-              : [t('hint.select'), t('proxy.enterHint'), t('hint.back')].join('   ')}
+            {[t('hint.select'), t('proxy.enterHint'), t('hint.back')].join('   ')}
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+export function FormModal({ state, t, th }: { state: ScreenState; t: TFn; th: Theme }) {
+  const f = state.form;
+  if (!f) return null;
+  const W = Math.max(44, Math.min(state.columns - 6, 72));
+  return (
+    <Box flexDirection="column" width={state.columns} alignItems="center" paddingTop={1}>
+      <Box width={W} borderStyle={th.border} borderColor="gray" flexDirection="column">
+        <Box paddingX={1}>
+          <Text bold>{f.title}</Text>
+        </Box>
+        <Sep th={th} />
+        <Box paddingX={1} flexDirection="column">
+          {f.fields.map((fld, i) => (
+            <Box key={fld.key}>
+              <Box width={2}>
+                <Text color={i === f.sel ? 'blue' : undefined}>{i === f.sel ? th.pointer : ' '}</Text>
+              </Box>
+              <Box width={10}>
+                <Text bold={i === f.sel}>{fld.label}</Text>
+              </Box>
+              <Text wrap="truncate">
+                {fld.masked ? th.dot.repeat(Math.min(fld.value.length, 36)) : fld.value}
+                {i === f.sel && f.stage === 'edit' ? '▏' : ''}
+              </Text>
+            </Box>
+          ))}
+          <Text> </Text>
+        </Box>
+        <Sep th={th} top />
+        <Box paddingX={1}>
+          <Text dimColor wrap="truncate">
+            {f.stage === 'confirm' ? t('input.confirmHint') : t('form.hint')}
           </Text>
         </Box>
       </Box>
@@ -289,6 +317,7 @@ export function Screen({ state, t }: { state: ScreenState; t: TFn }) {
   const th = theme(state.ascii);
   const W = Math.max(60, Math.min(state.columns, 110));
 
+  if (state.form) return <FormModal state={state} t={t} th={th} />;
   if (state.mode === 'lang') return <LangScreen state={state} t={t} th={th} />;
   if (state.mode === 'proxy') return <ProxyScreen state={state} t={t} th={th} />;
 
@@ -330,46 +359,28 @@ export function Screen({ state, t }: { state: ScreenState; t: TFn }) {
 
         <Sep th={th} top />
 
-        {state.input ? (
-          <Box flexDirection="column" paddingX={1}>
-            <Box>
-              <Text color="yellow">{`${state.input.label} `}</Text>
-              <Text>
-                {state.input.kind === 'token'
-                  ? state.input.stage === 'confirm'
-                    ? ' '
-                    : th.dot.repeat(Math.min(state.input.buffer.length, 40))
-                  : state.input.buffer}
-              </Text>
-            </Box>
-            <Text dimColor wrap="truncate">
-              {state.input.stage === 'confirm' ? t('input.confirmHint') : t('input.expiryHint')}
-            </Text>
-          </Box>
-        ) : (
-          <Box flexDirection="column" paddingX={1}>
-            <Text dimColor wrap="truncate">
-              {fitHints(
-                [
-                  t('hint.select'),
-                  t('hint.copy'),
-                  t('hint.reveal'),
-                  t('hint.verify'),
-                  t('hint.expiry'),
-                  t('hint.proxy'),
-                  t('hint.add'),
-                  t('hint.delete'),
-                  t('hint.lang'),
-                  t('hint.quit'),
-                ],
-                W - 4,
-              )}
-            </Text>
-            <Text color="green" wrap="truncate">
-              {state.message || ' '}
-            </Text>
-          </Box>
-        )}
+        <Box flexDirection="column" paddingX={1}>
+          <Text dimColor wrap="truncate">
+            {fitHints(
+              [
+                t('hint.select'),
+                t('hint.copy'),
+                t('hint.reveal'),
+                t('hint.verify'),
+                t('hint.expiry'),
+                t('hint.proxy'),
+                t('hint.add'),
+                t('hint.delete'),
+                t('hint.lang'),
+                t('hint.quit'),
+              ],
+              W - 4,
+            )}
+          </Text>
+          <Text color="green" wrap="truncate">
+            {state.message || ' '}
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

@@ -78,10 +78,10 @@ test('get --json 返回结构化字段', () => {
   const data = JSON.parse(r.out);
   assert.equal(data.platform, 'github');
   assert.equal(data.token, 'ghp_abc123');
-  // 平台没告知之前不编日期：写入 token 后到期状态是 unknown
-  assert.equal(data.expiresAt, null);
-  assert.equal(data.expiresState, 'unknown');
-  assert.equal(data.expiresSource, null);
+  // 新增时按 90 天默认值记录，来源标成 default（平台后续给出准确值会覆盖）
+  assert.equal(data.expiresAt, new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10));
+  assert.equal(data.expiresState, 'date');
+  assert.equal(data.expiresSource, 'default');
 });
 
 test('has 用退出码表达存在性', () => {
@@ -313,7 +313,7 @@ test('docker：与其它平台一样的 set/get/env/has', () => {
   const rows = JSON.parse(run(dir, ['list', '--json']).out);
   const docker = rows.find((r) => r.platform === 'docker');
   assert.equal(docker.configured, true);
-  assert.equal(docker.expiresState, 'unknown');
+  assert.equal(docker.expiresState, 'date');
 });
 
 test('docker：--user 记录用户名，供校验和 --field user 使用', () => {

@@ -8,7 +8,7 @@ import { expiryPatch } from '../store.js';
 import { parseExpiryInput } from '../expiry.js';
 import type { Config } from '../config.js';
 import type { Store } from '../store.js';
-import type { InputState, Mode, Row, ScreenState } from '../types.js';
+import type { FieldKey, FormField, FormState, Mode, Row, ScreenState } from '../types.js';
 
 export interface AppProps {
   store: Store;
@@ -19,10 +19,19 @@ export interface AppProps {
 }
 
 const LOCALES = ['zh-CN', 'en', 'ja'];
+const DEFAULT_EXPIRY = '+90d';
 
 // 有些终端把退格发成原始控制字符，key.backspace 不一定为真
 function isBackspace(key: any, inputStr: string): boolean {
   return !!(key.backspace || key.delete) || inputStr === '\x7f' || inputStr === '\b';
+}
+
+function fieldOf(f: FormState, key: FieldKey) {
+  return f.fields.find((x) => x.key === key);
+}
+
+function withValue(f: FormState, key: FieldKey, value: string): FormState {
+  return { ...f, fields: f.fields.map((x) => (x.key === key ? { ...x, value } : x)) };
 }
 
 export function App({ store, locale: initialLocale, configPath, config, ascii }: AppProps) {
@@ -31,7 +40,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
   const [rows, setRows] = useState<Row[]>(() => store.rows());
   const [sel, setSel] = useState(0);
   const [mode, setMode] = useState<Mode>('list');
-  const [input, setInput] = useState<InputState | null>(null);
+  const [form, setForm] = useState<FormState | null>(null);
   const [message, setMessage] = useState('');
   const [revealed, setRevealed] = useState(false);
   const [locale, setLocale] = useState(initialLocale);
@@ -103,41 +112,6 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     );
   }, []);
 
-  const saveToken = useCallback(
-    (im: InputState) => {
-      const tok = im.buffer.trim();
-      if (!store.saveToken(im.file, tok)) {
-        setInput(null);
-        setMessage(t('msg.writeFail', { code: 'EACCES' }));
-        return;
-      }
-      const prev = store.readMeta()[im.file] ?? {};
-      const now = new Date().toISOString();
-      // 换了 token，旧的到期信息就不再属于这枚凭证：回到“未知”，等平台下一次告知。
-      const patch = {
-        createdAt: prev.createdAt ?? now,
-        updatedAt: now,
-        lastStatus: null,
-        expiresAt: null,
-        expiresState: 'unknown' as const,
-        expiresSource: null,
-      };
-      store.setMeta(im.file, patch);
-      patchRow(im.file, {
-        tok,
-        updated: new Date(),
-        status: null,
-        mode: '600',
-        expiresAt: null,
-        expiresState: 'unknown',
-        expiresSource: null,
-      });
-      setInput(null);
-      setMessage(t('msg.saved', { name: im.label, n: tok.length }));
-    },
-    [patchRow, store, t],
-  );
-
   const saveProxy = useCallback(
     (patch: Partial<Config>) => {
       Object.assign(config, patch);
@@ -146,6 +120,266 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     },
     [config, configPath, t],
   );
+
+  // ---------- 表单 ----------
+
+  const openTokenForm = useCallback(
+    (row: Row) => {
+      const prev = store.readMeta()[row.file] ?? {};
+      const exp = row.expiresAt ?? DEFAULT_EXPIRY;
+      const fields: FormField[] = [
+        {
+          key: 'token' as const,
+          label: t('form.token'),
+          value: '',
+          initial: '',
+          masked: true,
+          required: true,
+        },
+      ];
+      if (row.key === 'docker') {
+        fields.push({
+          key: 'user' as const,
+          label: t('form.user'),
+          value: prev.username ?? '',
+          initial: prev.username ?? '',
+          masked: false,
+          required: true,
+        });
+      }
+      fields.push({
+        key: 'expiry' as const,
+        label: t('form.expiry'),
+        value: exp,
+        initial: exp,
+        masked: false,
+        required: false,
+      });
+      setForm({
+        kind: 'token',
+        file: row.file,
+        title: t('form.tokenTitle', { name: row.label }),
+        fields,
+        sel: 0,
+        stage: 'edit',
+        replacing: !!row.tok,
+      });
+    },
+    [store, t],
+  );
+
+  const openExpiryForm = useCallback(
+    (row: Row) => {
+      const value = row.expiresState === 'never' ? 'none' : (row.expiresAt ?? DEFAULT_EXPIRY);
+      setForm({
+        kind: 'expiry',
+        file: row.file,
+        title: t('form.expiryTitle', { name: row.label }),
+        fields: [
+          {
+            key: 'expiry',
+            label: t('form.expiry'),
+            value,
+            initial: value,
+            masked: false,
+            required: false,
+          },
+        ],
+        sel: 0,
+        stage: 'edit',
+        replacing: false,
+      });
+    },
+    [t],
+  );
+
+  const openProxyForm = useCallback(
+    (kind: 'proxy-url' | 'proxy-bypass') => {
+      const isUrl = kind === 'proxy-url';
+      const value = isUrl ? proxyUrl : proxyBypass;
+      setForm({
+        kind,
+        file: '',
+        title: isUrl ? t('proxy.address') : t('proxy.bypass'),
+        fields: [
+          {
+            key: 'user',
+            label: isUrl ? t('proxy.address') : t('proxy.bypass'),
+            value,
+            initial: value,
+            masked: false,
+            required: false,
+          },
+        ],
+        sel: 0,
+        stage: 'edit',
+        replacing: false,
+      });
+    },
+    [proxyBypass, proxyUrl, t],
+  );
+
+  const submitForm = useCallback(
+    (f: FormState) => {
+      const close = () => setForm(null);
+
+      if (f.kind === 'proxy-url' || f.kind === 'proxy-bypass') {
+        const v = f.fields[0].value.trim();
+        if (f.kind === 'proxy-url') {
+          if (v && !/^https?:\/\/\S+$/.test(v)) {
+            setMessage(t('proxy.invalid'));
+            return;
+          }
+          setProxyUrl(v);
+          saveProxy({ proxy: v || undefined });
+        } else {
+          const next = v || DEFAULT_BYPASS;
+          setProxyBypass(next);
+          saveProxy({ proxy_bypass: next });
+        }
+        close();
+        return;
+      }
+
+      if (f.kind === 'expiry') {
+        const parsed = parseExpiryInput(f.fields[0].value);
+        if (!parsed) {
+          setMessage(t('input.expiryInvalid'));
+          return;
+        }
+        const patch = {
+          expiresAt: parsed.state === 'date' ? parsed.at : null,
+          expiresState: parsed.state,
+          expiresSource: parsed.state === 'unknown' ? null : ('manual' as const),
+        };
+        store.setMeta(f.file, patch);
+        patchRow(f.file, patch);
+        close();
+        setMessage(
+          t('msg.expirySet', {
+            name: rows[sel]?.label ?? f.file,
+            value:
+              parsed.state === 'date'
+                ? String(parsed.at)
+                : parsed.state === 'never'
+                  ? t('time.none')
+                  : t('time.unknown'),
+          }),
+        );
+        return;
+      }
+
+      // token
+      const tok = fieldOf(f, 'token')?.value.trim() ?? '';
+      const userField = fieldOf(f, 'user');
+      const user = userField?.value.trim() ?? '';
+      const expField = fieldOf(f, 'expiry');
+      const parsed = parseExpiryInput(expField?.value.trim() || DEFAULT_EXPIRY);
+      if (!tok) {
+        setMessage(t('input.empty'));
+        return;
+      }
+      if (userField?.required && !user) {
+        setMessage(t('form.userRequired'));
+        return;
+      }
+      if (!parsed) {
+        setMessage(t('input.expiryInvalid'));
+        return;
+      }
+      if (!store.saveToken(f.file, tok)) {
+        close();
+        setMessage(t('msg.writeFail', { code: 'EACCES' }));
+        return;
+      }
+
+      const prev = store.readMeta()[f.file] ?? {};
+      const now = new Date().toISOString();
+      const source = expField && expField.value !== expField.initial ? 'manual' : 'default';
+      const patch = {
+        createdAt: prev.createdAt ?? now,
+        updatedAt: now,
+        lastStatus: null,
+        expiresAt: parsed.state === 'date' ? parsed.at : null,
+        expiresState: parsed.state,
+        expiresSource: parsed.state === 'unknown' ? null : source,
+        ...(user ? { username: user } : {}),
+      };
+      store.setMeta(f.file, patch as never);
+      patchRow(f.file, {
+        tok,
+        updated: new Date(),
+        status: null,
+        mode: '600',
+        expiresAt: patch.expiresAt,
+        expiresState: patch.expiresState,
+        expiresSource: patch.expiresSource as never,
+        ...(user ? { username: user } : {}),
+      });
+      close();
+      setMessage(t('msg.saved', { name: rows[sel]?.label ?? f.file, n: tok.length }));
+    },
+    [patchRow, rows, saveProxy, sel, store, t],
+  );
+
+  const handleForm = useCallback(
+    (inputStr: string, key: any) => {
+      if (!form) return;
+      const f = form;
+
+      if (f.stage === 'confirm') {
+        if (key.return || inputStr === 'y') submitForm(f);
+        else if (key.escape || inputStr === 'n') {
+          setForm({ ...f, stage: 'edit' });
+          setMessage(t('msg.cancelled'));
+        }
+        return;
+      }
+
+      if (key.escape) {
+        setForm(null);
+        setMessage(t('msg.cancelled'));
+        return;
+      }
+
+      const n = f.fields.length;
+      if (key.upArrow || (key.shift && key.tab)) {
+        setForm({ ...f, sel: (f.sel - 1 + n) % n });
+        return;
+      }
+      if (key.downArrow || key.tab) {
+        setForm({ ...f, sel: (f.sel + 1) % n });
+        return;
+      }
+
+      if (key.return) {
+        const missing = f.fields.find((x) => x.required && !x.value.trim());
+        if (missing) {
+          setMessage(t('input.empty'));
+          return;
+        }
+        if (f.kind === 'token' && f.replacing) {
+          setForm({ ...f, stage: 'confirm' });
+          return;
+        }
+        submitForm(f);
+        return;
+      }
+
+      const cur = f.fields[f.sel];
+      if (isBackspace(key, inputStr)) {
+        setForm(withValue(f, cur.key, cur.value.slice(0, -1)));
+        return;
+      }
+      if (inputStr) {
+        const clean = inputStr.replace(/[\r\n\t]/g, '');
+        if (clean) setForm(withValue(f, cur.key, cur.value + clean));
+      }
+    },
+    [form, submitForm, t],
+  );
+
+  // ---------- 列表 ----------
 
   const handleList = useCallback(
     (inputStr: string, key: any) => {
@@ -182,14 +416,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         return;
       }
       if (inputStr === 'a') {
-        setInput({
-          kind: 'token',
-          file: row.file,
-          label: row.label,
-          buffer: '',
-          stage: 'input',
-          replacing: !!row.tok,
-        });
+        openTokenForm(row);
         return;
       }
       if (inputStr === 'e') {
@@ -197,14 +424,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
           setMessage(t('msg.noToken'));
           return;
         }
-        setInput({
-          kind: 'expiry',
-          file: row.file,
-          label: `${row.label} ${t('field.expires')}`,
-          buffer: row.expiresState === 'never' ? 'none' : (row.expiresAt ?? ''),
-          stage: 'input',
-          replacing: false,
-        });
+        openExpiryForm(row);
         return;
       }
       if (inputStr === 'd') {
@@ -235,7 +455,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
         setMode('proxy');
       }
     },
-    [copy, exit, locale, patchRow, rows, runVerify, sel, store, t],
+    [copy, exit, locale, openExpiryForm, openTokenForm, patchRow, rows, runVerify, sel, store, t],
   );
 
   const handleLang = useCallback(
@@ -285,140 +505,14 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
           saveProxy({ proxy_enabled: next });
           return;
         }
-        if (proxySel === 1) {
-          setInput({
-            kind: 'proxy-url',
-            file: '',
-            label: t('proxy.address'),
-            buffer: proxyUrl,
-            stage: 'input',
-            replacing: false,
-          });
-          return;
-        }
-        setInput({
-          kind: 'proxy-bypass',
-          file: '',
-          label: t('proxy.bypass'),
-          buffer: proxyBypass,
-          stage: 'input',
-          replacing: false,
-        });
+        openProxyForm(proxySel === 1 ? 'proxy-url' : 'proxy-bypass');
       }
     },
-    [proxyBypass, proxyEnabled, proxySel, proxyUrl, saveProxy, t],
-  );
-
-  const handleInput = useCallback(
-    (inputStr: string, key: any) => {
-      if (!input) return;
-      if (input.kind === 'proxy-url' || input.kind === 'proxy-bypass') {
-        if (key.escape) {
-          setInput(null);
-          return;
-        }
-        if (key.return) {
-          const v = input.buffer.trim();
-          if (input.kind === 'proxy-url') {
-            if (v && !/^https?:\/\/\S+$/.test(v)) {
-              setMessage(t('proxy.invalid'));
-              return;
-            }
-            setProxyUrl(v);
-            saveProxy({ proxy: v || undefined });
-          } else {
-            const next = v || DEFAULT_BYPASS;
-            setProxyBypass(next);
-            saveProxy({ proxy_bypass: next });
-          }
-          setInput(null);
-          return;
-        }
-        if (isBackspace(key, inputStr)) {
-          setInput({ ...input, buffer: input.buffer.slice(0, -1) });
-          return;
-        }
-        if (inputStr) setInput({ ...input, buffer: input.buffer + inputStr.replace(/[\r\n\t]/g, '') });
-        return;
-      }
-
-      if (input.kind === 'expiry') {
-        if (key.escape) {
-          setInput(null);
-          return;
-        }
-        if (key.return) {
-          const row = rows[sel];
-          const parsed = parseExpiryInput(input.buffer);
-          if (!parsed) {
-            setMessage(t('input.expiryInvalid'));
-            return;
-          }
-          const patch = {
-            expiresAt: parsed.state === 'date' ? parsed.at : null,
-            expiresState: parsed.state,
-            expiresSource: parsed.state === 'unknown' ? null : ('manual' as const),
-          };
-          store.setMeta(input.file, patch);
-          patchRow(input.file, patch);
-          setInput(null);
-          setMessage(
-            t('msg.expirySet', {
-              name: row.label,
-              value:
-                parsed.state === 'date'
-                  ? String(parsed.at)
-                  : parsed.state === 'never'
-                    ? t('time.none')
-                    : t('time.unknown'),
-            }),
-          );
-          return;
-        }
-        if (isBackspace(key, inputStr)) {
-          setInput({ ...input, buffer: input.buffer.slice(0, -1) });
-          return;
-        }
-        if (inputStr) setInput({ ...input, buffer: input.buffer + inputStr.replace(/[\r\n\t]/g, '') });
-        return;
-      }
-
-      if (input.stage === 'confirm') {
-        if (key.return || inputStr === 'y') saveToken(input);
-        else if (key.escape || inputStr === 'n') {
-          setInput(null);
-          setMessage(t('msg.cancelled'));
-        }
-        return;
-      }
-      if (key.escape) {
-        setInput(null);
-        setMessage(t('msg.cancelled'));
-        return;
-      }
-      if (key.return) {
-        if (!input.buffer.trim()) {
-          setMessage(t('input.empty'));
-          return;
-        }
-        if (input.replacing) setInput({ ...input, stage: 'confirm' });
-        else saveToken(input);
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setInput({ ...input, buffer: input.buffer.slice(0, -1) });
-        return;
-      }
-      if (inputStr) {
-        const clean = inputStr.replace(/[\r\n\t]/g, '');
-        if (clean) setInput({ ...input, buffer: input.buffer + clean });
-      }
-    },
-    [input, patchRow, rows, saveToken, sel, store, t],
+    [openProxyForm, proxyEnabled, proxySel, saveProxy],
   );
 
   useInput((inputStr, key) => {
-    if (input) return handleInput(inputStr, key);
+    if (form) return handleForm(inputStr, key);
     if (mode === 'lang') return handleLang(inputStr, key);
     if (mode === 'proxy') return handleProxy(inputStr, key);
     return handleList(inputStr, key);
@@ -428,7 +522,7 @@ export function App({ store, locale: initialLocale, configPath, config, ascii }:
     rows,
     sel,
     mode,
-    input,
+    form,
     message,
     revealed,
     locale,

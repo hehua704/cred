@@ -13,9 +13,9 @@ export interface Status {
   note?: string;
 }
 
-/** 到期信息只认两个来源：平台自己说的（platform），或用户手动填的（manual）。 */
+/** 到期来源：平台告知、用户手填、或新增时按 90 天填的默认值。 */
 export type ExpiryState = 'date' | 'never' | 'unknown';
-export type ExpirySource = 'platform' | 'manual';
+export type ExpirySource = 'platform' | 'manual' | 'default';
 
 export interface Expiry {
   state: ExpiryState;
@@ -42,12 +42,25 @@ export interface ProxyState {
   sel: number;
 }
 
-export interface InputState {
+export type FieldKey = 'token' | 'user' | 'expiry';
+
+export interface FormField {
+  key: FieldKey;
+  label: string;
+  value: string;
+  /** 打开表单时的初始值，用来判断用户是否改过（决定到期来源是 manual 还是 default） */
+  initial: string;
+  masked: boolean;
+  required: boolean;
+}
+
+export interface FormState {
   kind: 'token' | 'expiry' | 'proxy-url' | 'proxy-bypass';
   file: string;
-  label: string;
-  buffer: string;
-  stage: 'input' | 'confirm';
+  title: string;
+  fields: FormField[];
+  sel: number;
+  stage: 'edit' | 'confirm';
   replacing: boolean;
 }
 
@@ -55,7 +68,7 @@ export interface ScreenState {
   rows: Row[];
   sel: number;
   mode: Mode;
-  input: InputState | null;
+  form: FormState | null;
   message: string;
   revealed: boolean;
   locale: string;

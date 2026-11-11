@@ -31,7 +31,7 @@ const rows = [
 
 function state(locale, columns, ascii = false, mode = 'list') {
   return {
-    rows, sel: 0, mode, input: null, message: '', revealed: false,
+    rows, sel: 0, mode, form: null, message: '', revealed: false,
     locale, langIndex: 0, dir: '/root/.dsh-publish', columns,
     configPath: '/root/.dsh-publish/config.toml', configLocale: 'auto', ascii,
     proxy: { enabled: true, url: 'http://127.0.0.1:7890', bypass: 'github.com,registry.npmjs.org', sel: 0 },
